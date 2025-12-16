@@ -1,0 +1,44 @@
+# 构建输出
+build/
+bin/
+*.o
+*.a
+*.so
+*.dylib
+
+# 编译文件
+*.d
+*.gcda
+*.gcno
+
+# IDE文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日志文件
+*.log
+logs/
+
+# 配置文件（包含敏感信息）
+configs/config.json
+configs/*.conf
+
+# 临时文件
+*.tmp
+*.temp
+.DS_Store
+
+# 第三方库（如果使用submodule）
+third_party/*/
+!third_party/.gitkeep
+
+# 测试输出
+tests/output/
+*.test
+
+# FFmpeg 二进制文件（如果文件太大，可以考虑使用 Git LFS）
+# third_party/ffmpeg/*/ffmpeg
+# third_party/ffmpeg/*/ffprobe

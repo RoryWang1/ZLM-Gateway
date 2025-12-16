@@ -1,0 +1,1003 @@
+#include "api/handlers/device_handler.hpp"
+#include "api/handlers/device_handler_helper.hpp"
+#include "api/utils/response_helper.hpp"
+#include "api/handlers/adapters/ONVIFDeviceAdapter.hpp"
+#include "api/handlers/adapters/ISAPIDeviceAdapter.hpp"
+#include "api/handlers/adapters/DahuaDeviceAdapter.hpp"
+#include "api/handlers/adapters/PSIADeviceAdapter.hpp"
+#include "api/handlers/adapters/GB28181DeviceAdapter.hpp"
+#include "gateway/onvif/onvif_gateway.hpp"
+#include "gateway/isapi/isapi_gateway.hpp"
+#include "gateway/dahua/dahua_gateway.hpp"
+#include "gateway/psia/psia_gateway.hpp"
+#include "gateway/gb28181/gb28181_gateway.hpp"
+#include "gateway/local_camera/local_camera_gateway.hpp"
+#include "streaming/stream_manager.hpp"
+#include "utils/logger.hpp"
+#include "utils/logger.hpp"
+#include <nlohmann/json.hpp>
+#include <chrono>
+
+using json = nlohmann::json;
+
+namespace api {
+namespace handlers {
+
+DeviceHandler::DeviceHandler(
+    std::shared_ptr<gateway::ONVIFGateway> onvif_gateway,
+    std::shared_ptr<gateway::ISAPIGateway> isapi_gateway,
+    std::shared_ptr<gateway::DahuaGateway> dahua_gateway,
+    std::shared_ptr<gateway::PSIAGateway> psia_gateway,
+    std::shared_ptr<gateway::GB28181Gateway> gb28181_gateway,
+    std::shared_ptr<gateway::LocalCameraGateway> local_camera_gateway,
+    std::shared_ptr<streaming::StreamManager> stream_manager) 
+    : onvif_gateway_(onvif_gateway),
+      isapi_gateway_(isapi_gateway),
+      dahua_gateway_(dahua_gateway),
+      psia_gateway_(psia_gateway),
+      gb28181_gateway_(gb28181_gateway),
+      local_camera_gateway_(local_camera_gateway),
+      stream_manager_(stream_manager) {
+    // 注册所有协议适配器
+    if (onvif_gateway) {
+        adapter_registry_.Register(std::make_shared<ONVIFDeviceAdapter>(onvif_gateway));
+    }
+    if (isapi_gateway) {
+        adapter_registry_.Register(std::make_shared<ISAPIDeviceAdapter>(isapi_gateway));
+    }
+    if (dahua_gateway) {
+        adapter_registry_.Register(std::make_shared<DahuaDeviceAdapter>(dahua_gateway));
+    }
+    if (psia_gateway) {
+        adapter_registry_.Register(std::make_shared<PSIADeviceAdapter>(psia_gateway));
+    }
+    if (gb28181_gateway) {
+        adapter_registry_.Register(std::make_shared<GB28181DeviceAdapter>(gb28181_gateway));
+    }
+}
+
+std::shared_ptr<IDeviceAdapter> DeviceHandler::GetAdapter(const std::string& protocol) {
+    return adapter_registry_.Get(protocol);
+}
+
+// ONVIF 设备管理（直接调用Gateway）
+void DeviceHandler::HandleDiscoverDevices(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!onvif_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "ONVIF Gateway not enabled", 500);
+            return;
+        }
+
+        // 解析超时参数
+        int timeout_seconds = 5;
+        if (!req.body.empty()) {
+            try {
+                auto body = json::parse(req.body);
+                timeout_seconds = body.value("timeout_seconds", 5);
+            } catch (const json::exception& e) {
+                // 使用默认值
+            }
+        }
+
+        // 调用Gateway发现设备
+        auto devices = onvif_gateway_->DiscoverDevices(timeout_seconds);
+
+        // 构造响应
+        json response_data = {
+            {"devices", json::array()},
+            {"count", devices.size()}
+        };
+
+        for (const auto& device : devices) {
+            json device_json;
+            device_json["id"] = device.id;
+            device_json["xaddr"] = device.xaddr;
+            device_json["types"] = device.types;
+            device_json["scopes"] = device.scopes;
+            device_json["manufacturer"] = device.manufacturer;
+            device_json["model"] = device.model;
+            device_json["serial_number"] = device.serial_number;
+            device_json["hardware_id"] = device.hardware_id;
+            if (!device.username.empty()) {
+                device_json["has_credentials"] = true;
+            } else {
+                device_json["has_credentials"] = false;
+            }
+            auto time_since_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+                device.last_seen.time_since_epoch()).count();
+            device_json["last_seen"] = time_since_epoch;
+            
+            response_data["devices"].push_back(device_json);
+        }
+
+        api::utils::ResponseHelper::Success(res, response_data, "Device discovery completed");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Discover ONVIF devices failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleGetDevices(const httplib::Request& req, httplib::Response& res) {
+    // 从查询参数中获取协议类型
+    std::string protocol = req.get_param_value("protocol");
+    
+    // 如果没有指定协议，默认使用onvif（向后兼容）
+    if (protocol.empty()) {
+        protocol = "onvif";
+    }
+    
+    auto adapter = GetAdapter(protocol);
+    if (adapter) {
+        adapter->HandleGetDevices(req, res);
+    } else {
+        // 如果协议未启用，返回空设备列表而不是错误（避免前端阻塞）
+        json response_data = {
+            {"devices", json::array()},
+            {"count", 0}
+        };
+        api::utils::ResponseHelper::Success(res, response_data, "Protocol not enabled");
+    }
+}
+
+void DeviceHandler::HandleGetDevice(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!onvif_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "ONVIF Gateway not enabled", 500);
+            return;
+        }
+
+        std::string device_id = req.matches[1];
+        auto device = onvif_gateway_->GetDevice(device_id);
+
+        if (device.id.empty()) {
+            api::utils::ResponseHelper::NotFound(res, "Device not found");
+            return;
+        }
+
+        json device_json;
+        device_json["id"] = device.id;
+        device_json["xaddr"] = device.xaddr;
+        device_json["types"] = device.types;
+        device_json["scopes"] = device.scopes;
+        device_json["manufacturer"] = device.manufacturer;
+        device_json["model"] = device.model;
+        device_json["serial_number"] = device.serial_number;
+        device_json["hardware_id"] = device.hardware_id;
+        if (!device.username.empty()) {
+            device_json["has_credentials"] = true;
+        } else {
+            device_json["has_credentials"] = false;
+        }
+        auto time_since_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+            device.last_seen.time_since_epoch()).count();
+        device_json["last_seen"] = time_since_epoch;
+
+        api::utils::ResponseHelper::Success(res, device_json, "success");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Get ONVIF device failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleGetDeviceRTSPURLs(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!onvif_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "ONVIF Gateway not enabled", 500);
+            return;
+        }
+
+        std::string device_id = req.matches[1];
+        auto rtsp_urls = onvif_gateway_->GetDeviceRTSPURLs(device_id);
+
+        json response_data = json::array();
+        for (const auto& url : rtsp_urls) {
+            json stream_json;
+            stream_json["stream_url"] = url;
+            response_data.push_back(stream_json);
+        }
+
+        api::utils::ResponseHelper::Success(res, response_data, "success");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Get ONVIF device RTSP URLs failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleDeleteDevice(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!onvif_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "ONVIF Gateway not enabled", 500);
+            return;
+        }
+
+        std::string device_id = req.matches[1];
+        onvif_gateway_->RemoveDevice(device_id);
+
+        json data = {
+            {"device_id", device_id}
+        };
+        api::utils::ResponseHelper::Success(res, data, "Device deleted successfully");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Delete ONVIF device failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleAddDevice(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!onvif_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "ONVIF Gateway not enabled", 500);
+            return;
+        }
+
+        auto body = json::parse(req.body);
+        gateway::ONVIFDevice device;
+        
+        if (body.contains("xaddr")) {
+            device.xaddr = body["xaddr"].get<std::string>();
+        } else {
+            api::utils::ResponseHelper::BadRequest(res, "Missing required field: xaddr");
+            return;
+        }
+        
+        if (body.contains("username")) {
+            device.username = body["username"].get<std::string>();
+        }
+        if (body.contains("password")) {
+            device.password = body["password"].get<std::string>();
+        }
+
+        std::string device_id = onvif_gateway_->AddDevice(device);
+        
+        json data = {
+            {"device_id", device_id},
+            {"xaddr", device.xaddr}
+        };
+        api::utils::ResponseHelper::Success(res, data, "Device added successfully");
+    } catch (const json::exception& e) {
+        ::utils::Logger::Get()->error("Parse request JSON failed: {}", e.what());
+        api::utils::ResponseHelper::BadRequest(res, "Invalid JSON format");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Add ONVIF device failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+// ISAPI 设备管理（使用适配器）
+void DeviceHandler::HandleDiscoverISAPIDevices(const httplib::Request& req, httplib::Response& res) {
+// 临时文件：ISAPI完整实现
+// 这些将替换device_handler.cpp中267-319行
+
+// ISAPI 设备管理（直接调用Gateway）
+void DeviceHandler::HandleDiscoverISAPIDevices(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!isapi_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "ISAPI Gateway not enabled", 500);
+            return;
+        }
+
+        auto body = json::parse(req.body);
+        std::string ip_range = body.value("ip_range", "192.168.1.0/24");
+        int port = body.value("port", 80);
+
+        auto devices = isapi_gateway_->DiscoverDevices(ip_range, port, 5);
+
+        json response_data = {
+            {"devices", json::array()},
+            {"count", devices.size()}
+        };
+
+        for (const auto& device : devices) {
+            json device_json;
+            device_json["id"] = device.id;
+            device_json["base_url"] = device.base_url;
+            device_json["manufacturer"] = device.manufacturer;
+            device_json["model"] = device.model;
+            device_json["serial_number"] = device.serial_number;
+            device_json["firmware_version"] = device.firmware_version;
+            if (!device.username.empty()) {
+                device_json["has_credentials"] = true;
+            } else {
+                device_json["has_credentials"] = false;
+            }
+            auto time_since_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+                device.last_seen.time_since_epoch()).count();
+            device_json["last_seen"] = time_since_epoch;
+            response_data["devices"].push_back(device_json);
+        }
+
+        api::utils::ResponseHelper::Success(res, response_data, "ISAPI device discovery completed");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Discover ISAPI devices failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleGetISAPIDevices(const httplib::Request& /* req */, httplib::Response& res) {
+    try {
+        if (!isapi_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "ISAPI Gateway not enabled", 500);
+            return;
+        }
+
+        auto devices = isapi_gateway_->ListDevices();
+
+        json response_data = {
+            {"devices", json::array()},
+            {"count", devices.size()}
+        };
+
+        for (const auto& device : devices) {
+            json device_json;
+            device_json["id"] = device.id;
+            device_json["base_url"] = device.base_url;
+            device_json["manufacturer"] = device.manufacturer;
+            device_json["model"] = device.model;
+            device_json["serial_number"] = device.serial_number;
+            device_json["firmware_version"] = device.firmware_version;
+            if (!device.username.empty()) {
+                device_json["has_credentials"] = true;
+            } else {
+                device_json["has_credentials"] = false;
+            }
+            auto time_since_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+                device.last_seen.time_since_epoch()).count();
+            device_json["last_seen"] = time_since_epoch;
+            response_data["devices"].push_back(device_json);
+        }
+
+        api::utils::ResponseHelper::Success(res, response_data, "success");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Get ISAPI devices failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleGetISAPIDevice(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!isapi_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "ISAPI Gateway not enabled", 500);
+            return;
+        }
+
+        std::string device_id = req.matches[1];
+        auto device = isapi_gateway_->GetDevice(device_id);
+
+        if (device.id.empty()) {
+            api::utils::ResponseHelper::NotFound(res, "Device not found");
+            return;
+        }
+
+        json device_json;
+        device_json["id"] = device.id;
+        device_json["base_url"] = device.base_url;
+        device_json["manufacturer"] = device.manufacturer;
+        device_json["model"] = device.model;
+        device_json["serial_number"] = device.serial_number;
+        device_json[" firmware_version"] = device.firmware_version;
+        if (!device.username.empty()) {
+            device_json["has_credentials"] = true;
+        } else {
+            device_json["has_credentials"] = false;
+        }
+        auto time_since_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+            device.last_seen.time_since_epoch()).count();
+        device_json["last_seen"] = time_since_epoch;
+
+        api::utils::ResponseHelper::Success(res, device_json, "success");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Get ISAPI device failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleGetISAPIDeviceRTSPURLs(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!isapi_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "ISAPI Gateway not enabled", 500);
+            return;
+        }
+
+        std::string device_id = req.matches[1];
+        auto rtsp_urls = isapi_gateway_->GetDeviceRTSPURLs(device_id);
+
+        json response_data = json::array();
+        for (const auto& url : rtsp_urls) {
+            json stream_json;
+            stream_json["stream_url"] = url;
+            response_data.push_back(stream_json);
+        }
+
+        api::utils::ResponseHelper::Success(res, response_data, "success");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Get ISAPI device RTSP URLs failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleAddISAPIDevice(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!isapi_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "ISAPI Gateway not enabled", 500);
+            return;
+        }
+
+        auto body = json::parse(req.body);
+        gateway::ISAPIDevice device;
+        
+        if (body.contains("base_url")) {
+            device.base_url = body["base_url"].get<std::string>();
+        } else {
+            api::utils::ResponseHelper::BadRequest(res, "Missing required field: base_url");
+            return;
+        }
+        
+        if (body.contains("username")) {
+            device.username = body["username"].get<std::string>();
+        }
+        if (body.contains("password")) {
+            device.password = body["password"].get<std::string>();
+        }
+
+        std::string device_id = isapi_gateway_->AddDevice(device);
+        
+        json data = {
+            {"device_id", device_id},
+            {"base_url", device.base_url}
+        };
+        api::utils::ResponseHelper::Success(res, data, "Device added successfully");
+    } catch (const json::exception& e) {
+        ::utils::Logger::Get()->error("Parse request JSON failed: {}", e.what());
+        api::utils::ResponseHelper::BadRequest(res, "Invalid JSON format");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Add ISAPI device failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleDeleteISAPIDevice(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!isapi_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "ISAPI Gateway not enabled", 500);
+            return;
+        }
+
+        std::string device_id = req.matches[1];
+        isapi_gateway_->RemoveDevice(device_id);
+
+        json data = {
+            {"device_id", device_id}
+        };
+        api::utils::ResponseHelper::Success(res, data, "Device deleted successfully");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Delete ISAPI device failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+// Dahua 设备管理（使用适配器）
+void DeviceHandler::HandleDiscoverDahuaDevices(const httplib::Request& req, httplib::Response& res) {
+    auto adapter = GetAdapter("dahua");
+    if (adapter) {
+        adapter->HandleDiscover(req, res);
+    } else {
+        api::utils::ResponseHelper::Error(res, -1, "Dahua Gateway not enabled", 500);
+    }
+}
+
+void DeviceHandler::HandleGetDahuaDevices(const httplib::Request& req, httplib::Response& res) {
+    auto adapter = GetAdapter("dahua");
+    if (adapter) {
+        adapter->HandleGetDevices(req, res);
+    } else {
+        api::utils::ResponseHelper::Error(res, -1, "Dahua Gateway not enabled", 500);
+    }
+}
+
+void DeviceHandler::HandleGetDahuaDevice(const httplib::Request& req, httplib::Response& res) {
+    auto adapter = GetAdapter("dahua");
+    if (adapter) {
+        adapter->HandleGetDevice(req, res);
+    } else {
+        api::utils::ResponseHelper::Error(res, -1, "Dahua Gateway not enabled", 500);
+    }
+}
+
+void DeviceHandler::HandleGetDahuaDeviceRTSPURLs(const httplib::Request& req, httplib::Response& res) {
+    auto adapter = GetAdapter("dahua");
+    if (adapter) {
+        adapter->HandleGetDeviceRTSPURLs(req, res);
+    } else {
+        api::utils::ResponseHelper::Error(res, -1, "Dahua Gateway not enabled", 500);
+    }
+}
+
+void DeviceHandler::HandleAddDahuaDevice(const httplib::Request& req, httplib::Response& res) {
+    auto adapter = GetAdapter("dahua");
+    if (adapter) {
+        adapter->HandleAddDevice(req, res);
+    } else {
+        api::utils::ResponseHelper::Error(res, -1, "Dahua Gateway not enabled", 500);
+    }
+}
+
+void DeviceHandler::HandleDeleteDahuaDevice(const httplib::Request& req, httplib::Response& res) {
+    auto adapter = GetAdapter("dahua");
+    if (adapter) {
+        adapter->HandleDeleteDevice(req, res);
+    } else {
+        api::utils::ResponseHelper::Error(res, -1, "Dahua Gateway not enabled", 500);
+    }
+}
+
+// PSIA 设备管理（使用适配器）
+void DeviceHandler::HandleDiscoverPSIADevices(const httplib::Request& req, httplib::Response& res) {
+    auto adapter = GetAdapter("psia");
+    if (adapter) {
+        adapter->HandleDiscover(req, res);
+    } else {
+        api::utils::ResponseHelper::Error(res, -1, "PSIA Gateway not enabled", 500);
+    }
+}
+
+void DeviceHandler::HandleGetPSIADevices(const httplib::Request& req, httplib::Response& res) {
+    auto adapter = GetAdapter("psia");
+    if (adapter) {
+        adapter->HandleGetDevices(req, res);
+    } else {
+        api::utils::ResponseHelper::Error(res, -1, "PSIA Gateway not enabled", 500);
+    }
+}
+
+void DeviceHandler::HandleGetPSIADevice(const httplib::Request& req, httplib::Response& res) {
+    auto adapter = GetAdapter("psia");
+    if (adapter) {
+        adapter->HandleGetDevice(req, res);
+    } else {
+        api::utils::ResponseHelper::Error(res, -1, "PSIA Gateway not enabled", 500);
+    }
+}
+
+void DeviceHandler::HandleGetPSIADeviceRTSPURLs(const httplib::Request& req, httplib::Response& res) {
+    auto adapter = GetAdapter("psia");
+    if (adapter) {
+        adapter->HandleGetDeviceRTSPURLs(req, res);
+    } else {
+        api::utils::ResponseHelper::Error(res, -1, "PSIA Gateway not enabled", 500);
+    }
+}
+
+void DeviceHandler::HandleAddPSIADevice(const httplib::Request& req, httplib::Response& res) {
+    auto adapter = GetAdapter("psia");
+    if (adapter) {
+        adapter->HandleAddDevice(req, res);
+    } else {
+        api::utils::ResponseHelper::Error(res, -1, "PSIA Gateway not enabled", 500);
+    }
+}
+
+void DeviceHandler::HandleDeletePSIADevice(const httplib::Request& req, httplib::Response& res) {
+    auto adapter = GetAdapter("psia");
+    if (adapter) {
+        adapter->HandleDeleteDevice(req, res);
+    } else {
+        api::utils::ResponseHelper::Error(res, -1, "PSIA Gateway not enabled", 500);
+    }
+}
+
+// GB28181 设备管理（使用适配器）
+void DeviceHandler::HandleGB28181GetDevices(const httplib::Request& /* req */, httplib::Response& res) {
+    try {
+        if (!gb28181_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "GB28181 Gateway not enabled", 500);
+            return;
+        }
+
+        auto devices = gb28181_gateway_->ListDevices();
+
+        json response_data = {
+            {"devices", json::array()},
+            {"count", devices.size()}
+        };
+
+        for (const auto& device : devices) {
+            json device_json;
+            device_json["id"] = device.id;
+            device_json["name"] = device.name;
+            device_json["ip"] = device.ip;
+            device_json["port"] = device.port;
+            response_data["devices"].push_back(device_json);
+        }
+
+        api::utils::ResponseHelper::Success(res, response_data, "success");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Get GB28181 devices failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleGB28181GetDevice(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!gb28181_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "GB28181 Gateway not enabled", 500);
+            return;
+        }
+
+        std::string device_id = req.matches[1];
+        auto device = gb28181_gateway_->GetDevice(device_id);
+
+        if (device.id.empty()) {
+            api::utils::ResponseHelper::NotFound(res, "Device not found");
+            return;
+        }
+
+        json device_json;
+        device_json["id"] = device.id;
+        device_json["name"] = device.name;
+        device_json["ip"] = device.ip;
+        device_json["port"] = device.port;
+
+        api::utils::ResponseHelper::Success(res, device_json, "success");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Get GB28181 device failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleGB28181AddDevice(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!gb28181_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "GB28181 Gateway not enabled", 500);
+            return;
+        }
+
+        auto body = json::parse(req.body);
+        gateway::GB28181Device device;
+        
+        if (body.contains("id")) device.id = body["id"].get<std::string>();
+        if (body.contains("name")) device.name = body["name"].get<std::string>();
+        if (body.contains("ip")) device.ip = body["ip"].get<std::string>();
+        if (body.contains("port")) device.port = body["port"].get<int>();
+
+        std::string device_id = gb28181_gateway_->AddDevice(device);
+        
+        json response_data = {
+            {"device_id", device_id}
+        };
+        api::utils::ResponseHelper::Success(res, response_data, "Device added successfully");
+    } catch (const json::exception& e) {
+        ::utils::Logger::Get()->error("Parse request body failed: {}", e.what());
+        api::utils::ResponseHelper::BadRequest(res, "Invalid request body");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Add GB28181 device failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleGB28181DeleteDevice(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!gb28181_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "GB28181 Gateway not enabled", 500);
+            return;
+        }
+
+        std::string device_id = req.matches[1];
+        gb28181_gateway_->RemoveDevice(device_id);
+
+        json data = {
+            {"device_id", device_id}
+        };
+        api::utils::ResponseHelper::Success(res, data, "Device deleted successfully");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Delete GB28181 device failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+// ===== LocalCamera Device Management =====
+
+// ===== LocalCamera Device Management =====
+
+void DeviceHandler::HandleDiscoverLocalCameras(const httplib::Request& /* req */, httplib::Response& res) {
+    try {
+        ::utils::Logger::Get()->info("[HttpServer] 收到本地摄像头发现请求");
+        if (!local_camera_gateway_) {
+            ::utils::Logger::Get()->error("[HttpServer] Local Camera Gateway 未启用");
+            api::utils::ResponseHelper::Error(res, -1, "Local Camera Gateway not enabled", 500);
+            return;
+        }
+
+        ::utils::Logger::Get()->info("[HttpServer] 开始发现摄像头设备...");
+        auto devices = local_camera_gateway_->DiscoverCameras();
+        ::utils::Logger::Get()->info("[HttpServer] 发现 {} 个摄像头设备", devices.size());
+
+        json response_data = {
+            {"devices", json::array()},
+            {"count", devices.size()}
+        };
+
+        for (const auto& device : devices) {
+            json device_json;
+            device_json["device_id"] = device.device_id;
+            device_json["name"] = device.name;
+            device_json["protocol"] = "local-camera";
+            device_json["index"] = device.index;
+            device_json["platform"] = device.platform;
+            device_json["device_path"] = device.device_path;
+            
+            response_data["devices"].push_back(device_json);
+        }
+
+        api::utils::ResponseHelper::Success(res, response_data, "Local camera discovery completed");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Discover local cameras failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleGetLocalCameras(const httplib::Request& /* req */, httplib::Response& res) {
+    try {
+        if (!local_camera_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "Local Camera Gateway not enabled", 500);
+            return;
+        }
+
+        auto devices = local_camera_gateway_->ListCameras(false);
+
+        json response_data = {
+            {"devices", json::array()},
+            {"count", devices.size()}
+        };
+
+        for (const auto& device : devices) {
+            json device_json;
+            device_json["device_id"] = device.device_id;
+            device_json["name"] = device.name;
+            device_json["protocol"] = "local-camera";
+            device_json["index"] = device.index;
+            device_json["platform"] = device.platform;
+            device_json["device_path"] = device.device_path;
+            if (device.audio_device_index >= 0) {
+                device_json["audio_device_index"] = device.audio_device_index;
+            }
+            
+            response_data["devices"].push_back(device_json);
+        }
+
+        api::utils::ResponseHelper::Success(res, response_data);
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Get local cameras failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleRefreshLocalCameras(const httplib::Request& /* req */, httplib::Response& res) {
+    try {
+        if (!local_camera_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "Local Camera Gateway not enabled", 500);
+            return;
+        }
+
+        // 强制重新扫描本地设备
+        auto devices = local_camera_gateway_->ListCameras(true);
+
+        json response_data = {
+            {"devices", json::array()},
+            {"count", devices.size()}
+        };
+
+        for (const auto& device : devices) {
+            json device_json;
+            device_json["device_id"] = device.device_id;
+            device_json["name"] = device.name;
+            device_json["protocol"] = "local-camera";
+            device_json["index"] = device.index;
+            device_json["platform"] = device.platform;
+            device_json["device_path"] = device.device_path;
+            if (device.audio_device_index >= 0) {
+                device_json["audio_device_index"] = device.audio_device_index;
+            }
+
+            response_data["devices"].push_back(device_json);
+        }
+
+        api::utils::ResponseHelper::Success(res, response_data, "Local cameras refreshed");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Refresh local cameras failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleGetLocalCamera(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!local_camera_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "Local Camera Gateway not enabled", 500);
+            return;
+        }
+
+        std::string device_id = req.path_params.at("id");
+        auto device = local_camera_gateway_->GetCamera(device_id);
+
+        if (device.device_id.empty()) {
+            api::utils::ResponseHelper::NotFound(res, "Camera not found");
+            return;
+        }
+
+        json data = {
+            {"device_id", device.device_id},
+            {"name", device.name},
+            {"protocol", "local-camera"},
+            {"index", device.index},
+            {"platform", device.platform},
+            {"device_path", device.device_path}
+        };
+
+        api::utils::ResponseHelper::Success(res, data);
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Get local camera failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleGetLocalCameraCapabilities(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!local_camera_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "Local Camera Gateway not enabled", 500);
+            return;
+        }
+        
+        std::string device_id;
+        if (req.path_params.find("id") != req.path_params.end()) {
+            device_id = req.path_params.at("id");
+        } else if (req.matches.size() > 1) {
+            device_id = req.matches[1];
+        } else {
+            api::utils::ResponseHelper::BadRequest(res, "Device ID is required");
+            return;
+        }
+        
+        auto capabilities = local_camera_gateway_->QueryDeviceCapabilities(device_id);
+        
+        json data = {
+            {"device_id", device_id},
+            {"supported_resolutions", capabilities.first},
+            {"supported_fps", capabilities.second}
+        };
+        
+        api::utils::ResponseHelper::Success(res, data);
+    } catch (const std::exception& e) {
+        api::utils::ResponseHelper::Error(res, -1, std::string("Error: ") + e.what(), 500);
+    }
+}
+
+void DeviceHandler::HandleStartLocalCameraStream(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!local_camera_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "Local Camera Gateway not enabled", 500);
+            return;
+        }
+
+        json body = json::parse(req.body);
+        
+        std::string device_id = body.value("device_id", "");
+        std::string app = body.value("app", "live");
+        std::string stream = body.value("stream", "");
+        std::string output_protocol = body.value("output_protocol", "webrtc");
+
+        if (device_id.empty() || stream.empty()) {
+            api::utils::ResponseHelper::BadRequest(res, "device_id and stream cannot be empty");
+            return;
+        }
+
+        bool success = local_camera_gateway_->StartCameraStream(device_id, app, stream, output_protocol);
+
+        if (success) {
+            int camera_index = local_camera_gateway_->GetCameraIndexFromDeviceID(device_id);
+            if (camera_index < 0) {
+                api::utils::ResponseHelper::NotFound(res, "Camera device not found: " + device_id);
+                return;
+            }
+            
+            // 注意：不再直接设置 status，LocalCameraGateway 的 StartCameraStream 方法
+            // 会通过 OnStreamCreateRequested 和 OnStreamCreateResult 来管理状态
+            // 这里不需要重复注册或更新流元数据
+
+            json data = {
+                {"app", app},
+                {"stream", stream},
+                {"device_id", device_id},
+                {"output_protocol", output_protocol}
+            };
+            api::utils::ResponseHelper::Success(res, data, "Local camera stream started successfully");
+        } else {
+            int camera_index = local_camera_gateway_->GetCameraIndexFromDeviceID(device_id);
+            std::string error_msg = "Failed to start local camera stream";
+            int error_code = -1;
+            int http_status = 500;
+            
+            if (camera_index < 0) {
+                error_msg = "Camera device not found: " + device_id + ". Please discover devices first.";
+                http_status = 404;
+            } else {
+                std::string using_stream = local_camera_gateway_->CheckDeviceOccupied(device_id);
+                
+                if (!using_stream.empty()) {
+                    error_msg = "Device is already in use by stream: " + using_stream + ". Please stop the existing stream first.";
+                    error_code = -2;
+                    http_status = 409;
+                } else {
+                    error_msg = "Failed to start local camera stream for device: " + device_id + " (index: " + std::to_string(camera_index) + ")";
+                }
+            }
+            
+            if (http_status == 409) {
+                api::utils::ResponseHelper::Conflict(res, error_msg);
+            } else if (http_status == 404) {
+                api::utils::ResponseHelper::NotFound(res, error_msg);
+            } else {
+                api::utils::ResponseHelper::Error(res, error_code, error_msg, http_status);
+            }
+        }
+    } catch (const json::exception& e) {
+        ::utils::Logger::Get()->error("Parse request JSON failed: {}", e.what());
+        api::utils::ResponseHelper::BadRequest(res, "Invalid JSON format");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Start local camera stream failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, e);
+    }
+}
+
+void DeviceHandler::HandleStopLocalCameraStream(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!local_camera_gateway_) {
+            api::utils::ResponseHelper::Error(res, -1, "Local Camera Gateway not enabled", 500);
+            return;
+        }
+
+        if (req.body.empty()) {
+            api::utils::ResponseHelper::BadRequest(res, "Request body cannot be empty");
+            return;
+        }
+
+        json body;
+        try {
+            body = json::parse(req.body);
+        } catch (const json::exception& e) {
+            ::utils::Logger::Get()->error("Parse request JSON failed: {}", e.what());
+            api::utils::ResponseHelper::BadRequest(res, "Invalid JSON format: " + std::string(e.what()));
+            return;
+        }
+        
+        std::string app = body.value("app", "live");
+        std::string stream = body.value("stream", "");
+
+        if (stream.empty()) {
+            api::utils::ResponseHelper::BadRequest(res, "stream cannot be empty");
+            return;
+        }
+
+        (void)local_camera_gateway_->StopCameraStream(app, stream);
+
+        try {
+            // UnregisterStream 会自动将状态设为 Stopped 并广播更新，不需要单独调用 UpdateStreamStatus
+            stream_manager_->UnregisterStream(app, stream);
+        } catch (const std::exception& e) {
+            ::utils::Logger::Get()->warn("UnregisterStream failed (non-fatal): {}", e.what());
+        }
+
+        json data = {
+            {"app", app},
+            {"stream", stream}
+        };
+        api::utils::ResponseHelper::Success(res, data, "Local camera stream stopped successfully");
+    } catch (const std::exception& e) {
+        ::utils::Logger::Get()->error("Stop local camera stream failed: {}", e.what());
+        api::utils::ResponseHelper::Error(res, -1, "Internal server error: " + std::string(e.what()), 500);
+    } catch (...) {
+        ::utils::Logger::Get()->error("Stop local camera stream failed: unknown exception");
+        api::utils::ResponseHelper::Error(res, -1, "Internal server error: unknown exception", 500);
+    }
+}
+
+} // namespace handlers
+} // namespace api

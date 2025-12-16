@@ -1,0 +1,61 @@
+{
+    "gateway": {
+        "http_port": 8080,
+        "ws_port": 8092,
+        "log_level": "info",
+        "log_file": "logs/gateway.log",
+        "total_bandwidth_mbps": 100
+    },
+    "zlmediakit": {
+        "api_url": "http://127.0.0.1:8081",
+        "secret": "YOUR_SECRET_HERE",
+        "rtmp_port": 1935,
+        "rtsp_port": 8554,
+        "http_port": 8081
+    },
+    "process": {
+        "max_restarts": 3,
+        "monitor_interval": 5,
+        "max_processes": 100,
+        "default_cpu_limit": 50,
+        "default_memory_limit": 512
+    },
+    "gateways": {
+        "rtsp": {
+            "enabled": true
+        },
+        "rtmp": {
+            "enabled": true
+        },
+        "http-flv": {
+            "enabled": true
+        },
+        "hls": {
+            "enabled": true
+        },
+        "local_camera": {
+            "enabled": true
+        },
+        "dahua": {
+            "enabled": true
+        },
+        "isapi": {
+            "enabled": true
+        },
+        "onvif": {
+            "enabled": true
+        },
+        "psia": {
+            "enabled": true
+        },
+        "gb28181": {
+            "enabled": true
+        },
+        "dash": {
+            "enabled": true
+        },
+        "quic": {
+            "enabled": true
+        }
+    }
+}
