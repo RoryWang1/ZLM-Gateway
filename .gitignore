@@ -34,6 +34,7 @@ configs/*.conf
 # 第三方库（如果使用submodule）
 third_party/*/
 !third_party/.gitkeep
+!third_party/zlmediakit
 
 # 测试输出
 tests/output/
