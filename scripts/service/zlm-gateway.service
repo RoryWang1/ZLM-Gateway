@@ -1,0 +1,31 @@
+[Unit]
+Description=ZLM Gateway Service
+After=network.target network-online.target zlmediakit.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+# 建议在生产环境使用非 root 用户
+# User=zlm
+# Group=zlm
+
+# 路径配置
+WorkingDirectory=/usr/local/bin
+ExecStart=/usr/local/bin/gateway_manager -c /etc/gateway/config.json
+
+# 重启策略
+Restart=always
+RestartSec=5s
+
+# 资源限制
+LimitNOFILE=65535
+LimitCORE=infinity
+
+# 日志 (stdout/stderr 转 journald)
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

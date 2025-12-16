@@ -1,0 +1,148 @@
+[2025-12-16 19:00:35.430] [info] [1199680] ==========================================
+[2025-12-16 19:00:35.430] [info] [1199680] ZLM Gateway 启动
+[2025-12-16 19:00:35.430] [info] [1199680] ==========================================
+[2025-12-16 19:00:35.430] [info] [1199680] 配置文件: configs/debug.json
+[2025-12-16 19:00:35.430] [info] [1199680] 日志级别: debug
+[2025-12-16 19:00:35.430] [info] [1199680] 日志文件: stdout
+[2025-12-16 19:00:35.430] [info] [1199680] 检查 ZLMediaKit 连接: http://127.0.0.1:8081
+[2025-12-16 19:00:35.433] [warning] [1199680] ZLMediaKit 服务器未响应，请确保服务器正在运行
+[2025-12-16 19:00:35.433] [info] [1199680] WebSocket服务器初始化，端口: 8092
+[2025-12-16 19:00:35.471] [info] [1199680] WebSocket服务器已启动: ws://0.0.0.0:8092
+[2025-12-16 19:00:35.471] [info] [1199683] 启动WebSocket服务器，端口: 8092
+[2025-12-16 19:00:35.471] [info] [1199684] Phase 2.3: 进程监控线程启动（分层监控模式）
+[2025-12-16 19:00:35.471] [info] [1199680] Process Manager 初始化完成 (最大重启次数: 3, 监控间隔: 5s, 最大进程数: 无限制)
+[2025-12-16 19:00:35.471] [info] [1199680] Stream Manager 初始化完成
+[2025-12-16 19:00:35.471] [info] [1199680] 启动状态同步线程，同步间隔: 10 秒
+[2025-12-16 19:00:35.471] [info] [1199680] Stream Manager 已启动，状态同步间隔: 10 秒
+[2025-12-16 19:00:35.471] [info] [1199680] 从配置文件读取总带宽: 100 Mbps
+[2025-12-16 19:00:35.471] [info] [1199680] 智能码率分配器已创建，总带宽: 100 Mbps
+[2025-12-16 19:00:35.471] [info] [1199680] Dahua Gateway 初始化完成（支持直接代理和转码）
+[2025-12-16 19:00:35.471] [info] [1199680] Gateway verified and registered: dahua
+[2025-12-16 19:00:35.471] [info] [1199680] Gateway verified and registered: dash
+[2025-12-16 19:00:35.486] [debug] [1199685] Phase 2.1: Preparing stream updates (lock-free)...
+[2025-12-16 19:00:35.486] [debug] [1199685] Phase 2.1: Snapshot took 0μs (lock held)
+[2025-12-16 19:00:35.486] [info] [1199685] Phase 2.1: PrepareStreamUpdates completed: 0 streams, 28μs total (snapshot: 0μs)
+[2025-12-16 19:00:35.486] [debug] [1199685] Phase 2.1: Prepared 0 updates
+[2025-12-16 19:00:35.486] [debug] [1199685] Phase 2.1: Applying stream updates (brief lock)...
+[2025-12-16 19:00:35.486] [info] [1199685] Phase 2.1: ApplyStreamUpdates: 0 streams, lock held: 0μs, total: 0μs
+[2025-12-16 19:00:35.486] [debug] [1199685] 同步 ZLMediaKit 状态完成，更新了 0 个流，自动注册了 0 个新流
+[2025-12-16 19:00:35.503] [info] [1199680] SipServer: 启动SIP服务器成功，绑定地址: 0.0.0.0:5060, socket_fd=8
+[2025-12-16 19:00:35.503] [info] [1199688] SipServer 接收线程启动
+[2025-12-16 19:00:35.503] [info] [1199689] SipServer 消息处理线程启动
+[2025-12-16 19:00:35.503] [info] [1199680] SipServer: SIP服务器线程已启动
+[2025-12-16 19:00:35.503] [info] [1199690] 心跳检查线程启动
+[2025-12-16 19:00:35.503] [info] [1199680] GB28181 Gateway: SIP服务器已自动启动，端口: 5060
+[2025-12-16 19:00:35.503] [info] [1199680] Gateway verified and registered: gb28181
+[2025-12-16 19:00:35.503] [info] [1199680] [HLS Gateway] Increased validation timeout to 20s for -re throttling and analysis
+[2025-12-16 19:00:35.503] [info] [1199691] GB28181 Gateway 流状态检查线程启动
+[2025-12-16 19:00:35.503] [info] [1199680] HLS Gateway 初始化完成（支持直接代理和转码）
+[2025-12-16 19:00:35.503] [info] [1199680] Gateway verified and registered: hls
+[2025-12-16 19:00:35.503] [info] [1199680] Gateway verified and registered: http-flv
+[2025-12-16 19:00:35.503] [info] [1199680] ISAPI Gateway 初始化完成（支持直接代理和转码）
+[2025-12-16 19:00:35.503] [info] [1199680] Gateway verified and registered: isapi
+[2025-12-16 19:00:35.503] [info] [1199692] [HealthMonitor] 流健康监控线程启动
+[2025-12-16 19:00:35.503] [info] [1199680] [HealthMonitor] 健康监控已启动，检查间隔: 10秒，自动恢复: 禁用
+[2025-12-16 19:00:35.503] [info] [1199680] [LocalCameraGateway] 码率分配更新线程已启动
+[2025-12-16 19:00:35.503] [info] [1199680] [LocalCameraGateway] 初始化完成，FFmpeg路径: ffmpeg，设备缓存TTL: 30秒，健康检查间隔: 10秒，自动恢复: 禁用
+[2025-12-16 19:00:35.503] [info] [1199680] Gateway verified and registered: local_camera
+[2025-12-16 19:00:35.503] [info] [1199680] ONVIF Gateway 初始化完成（支持直接代理和转码）
+[2025-12-16 19:00:35.503] [info] [1199680] Gateway verified and registered: onvif
+[2025-12-16 19:00:35.503] [info] [1199680] PSIA Gateway 初始化完成（支持直接代理和转码）
+[2025-12-16 19:00:35.503] [info] [1199680] Gateway verified and registered: psia
+[2025-12-16 19:00:35.503] [info] [1199680] Gateway verified and registered: quic
+[2025-12-16 19:00:35.503] [info] [1199680] RTMP Gateway 初始化完成（支持直接代理和转码）
+[2025-12-16 19:00:35.503] [info] [1199680] Gateway verified and registered: rtmp
+[2025-12-16 19:00:35.503] [info] [1199680] [RTSP Gateway] 初始化完成，FFmpeg路径: ffmpeg
+[2025-12-16 19:00:35.503] [info] [1199680] Gateway verified and registered: rtsp
+[2025-12-16 19:00:35.503] [info] [1199680] 正在创建 HTTP API 服务器...
+[2025-12-16 19:00:35.503] [info] [1199694] [LocalCameraGateway] 码率分配更新循环线程启动
+[2025-12-16 19:00:35.503] [info] [1199680] HTTP 服务器配置 (Phase 4优化): 读超时=10s, 写超时=10s
+[2025-12-16 19:00:35.503] [info] [1199680] StreamStartQueue initializing with 4 workers, max queue size: 100
+[2025-12-16 19:00:35.503] [debug] [1199695] StreamStartQueue worker thread started
+[2025-12-16 19:00:35.503] [debug] [1199697] StreamStartQueue worker thread started
+[2025-12-16 19:00:35.503] [info] [1199680] StreamStartQueue initialized successfully
+[2025-12-16 19:00:35.503] [info] [1199680] Phase 2.2: StreamStartQueue initialized with 4 workers, max 100 queue
+[2025-12-16 19:00:35.503] [debug] [1199696] StreamStartQueue worker thread started
+[2025-12-16 19:00:35.503] [debug] [1199698] StreamStartQueue worker thread started
+[2025-12-16 19:00:35.504] [info] [1199680] [Hook] Hook Handler 初始化完成，重试机制已启动
+[2025-12-16 19:00:35.504] [info] [1199680] [Hook] 按需拉流功能已启用
+[2025-12-16 19:00:35.504] [info] [1199699] [Hook] 重试线程启动
+[2025-12-16 19:00:35.504] [info] [1199680] HTTP API 服务器创建完成
+[2025-12-16 19:00:35.504] [info] [1199680] 正在启动 HTTP API 服务器...
+[2025-12-16 19:00:35.521] [info] [1199702] 启动 HTTP API 服务器，端口: 8080
+[2025-12-16 19:00:35.622] [info] [1199680] HTTP API server started: http://0.0.0.0:8080
+[2025-12-16 19:00:35.622] [info] [1199680] HTTP API 服务器启动成功
+[2025-12-16 19:00:35.622] [info] [1199680] ==========================================
+[2025-12-16 19:00:35.622] [info] [1199680] ZLM Gateway 运行中...
+[2025-12-16 19:00:35.622] [info] [1199680] HTTP API: http://0.0.0.0:8080
+[2025-12-16 19:00:35.622] [info] [1199680] WebSocket: ws://0.0.0.0:8092
+[2025-12-16 19:00:35.622] [info] [1199680] 按 Ctrl+C 退出
+[2025-12-16 19:00:35.622] [info] [1199680] ==========================================
+[2025-12-16 19:00:45.497] [debug] [1199685] Phase 2.1: Preparing stream updates (lock-free)...
+[2025-12-16 19:00:45.497] [debug] [1199685] Phase 2.1: Snapshot took 0μs (lock held)
+[2025-12-16 19:00:45.497] [info] [1199685] Phase 2.1: PrepareStreamUpdates completed: 0 streams, 47μs total (snapshot: 0μs)
+[2025-12-16 19:00:45.497] [debug] [1199685] Phase 2.1: Prepared 0 updates
+[2025-12-16 19:00:45.497] [debug] [1199685] Phase 2.1: Applying stream updates (brief lock)...
+[2025-12-16 19:00:45.497] [info] [1199685] Phase 2.1: ApplyStreamUpdates: 0 streams, lock held: 0μs, total: 0μs
+[2025-12-16 19:00:45.497] [debug] [1199685] 同步 ZLMediaKit 状态完成，更新了 0 个流，自动注册了 0 个新流
+[2025-12-16 19:00:45.518] [debug] [1199694] [BitrateAllocator] Updated allocations for 0 streams
+[2025-12-16 19:00:45.518] [debug] [1199694] [LocalCameraGateway] 码率分配更新成功
+[2025-12-16 19:00:55.509] [debug] [1199685] Phase 2.1: Preparing stream updates (lock-free)...
+[2025-12-16 19:00:55.510] [debug] [1199685] Phase 2.1: Snapshot took 0μs (lock held)
+[2025-12-16 19:00:55.510] [info] [1199685] Phase 2.1: PrepareStreamUpdates completed: 0 streams, 29μs total (snapshot: 0μs)
+[2025-12-16 19:00:55.510] [debug] [1199685] Phase 2.1: Prepared 0 updates
+[2025-12-16 19:00:55.510] [debug] [1199685] Phase 2.1: Applying stream updates (brief lock)...
+[2025-12-16 19:00:55.510] [info] [1199685] Phase 2.1: ApplyStreamUpdates: 0 streams, lock held: 0μs, total: 0μs
+[2025-12-16 19:00:55.510] [debug] [1199685] 同步 ZLMediaKit 状态完成，更新了 0 个流，自动注册了 0 个新流
+[2025-12-16 19:00:55.529] [debug] [1199694] [BitrateAllocator] Updated allocations for 0 streams
+[2025-12-16 19:00:55.529] [debug] [1199694] [LocalCameraGateway] 码率分配更新成功
+[2025-12-16 19:01:05.522] [debug] [1199685] Phase 2.1: Preparing stream updates (lock-free)...
+[2025-12-16 19:01:05.522] [debug] [1199685] Phase 2.1: Snapshot took 0μs (lock held)
+[2025-12-16 19:01:05.522] [info] [1199685] Phase 2.1: PrepareStreamUpdates completed: 0 streams, 21μs total (snapshot: 0μs)
+[2025-12-16 19:01:05.522] [debug] [1199685] Phase 2.1: Prepared 0 updates
+[2025-12-16 19:01:05.522] [debug] [1199685] Phase 2.1: Applying stream updates (brief lock)...
+[2025-12-16 19:01:05.522] [info] [1199685] Phase 2.1: ApplyStreamUpdates: 0 streams, lock held: 0μs, total: 0μs
+[2025-12-16 19:01:05.522] [debug] [1199685] 同步 ZLMediaKit 状态完成，更新了 0 个流，自动注册了 0 个新流
+[2025-12-16 19:01:05.533] [debug] [1199694] [BitrateAllocator] Updated allocations for 0 streams
+[2025-12-16 19:01:05.533] [debug] [1199694] [LocalCameraGateway] 码率分配更新成功
+[2025-12-16 19:01:06.653] [info] [1199680] 收到退出信号，正在关闭服务器...
+[2025-12-16 19:01:06.653] [info] [1199680] Stopping HTTP API server
+[2025-12-16 19:01:06.653] [info] [1199680] 停止WebSocket服务器
+[2025-12-16 19:01:06.653] [info] [1199680] ZLM Gateway 已退出
+[2025-12-16 19:01:06.682] [info] [1199699] [Hook] 重试线程退出
+[2025-12-16 19:01:06.682] [info] [1199680] [Hook] Hook Handler 已销毁
+[2025-12-16 19:01:06.682] [info] [1199680] Stopping StreamStartQueue...
+[2025-12-16 19:01:06.682] [debug] [1199696] StreamStartQueue worker thread stopped
+[2025-12-16 19:01:06.682] [debug] [1199695] StreamStartQueue worker thread stopped
+[2025-12-16 19:01:06.682] [debug] [1199698] StreamStartQueue worker thread stopped
+[2025-12-16 19:01:06.682] [debug] [1199697] StreamStartQueue worker thread stopped
+[2025-12-16 19:01:06.682] [info] [1199680] StreamStartQueue stopped. Completed: 0, Failed: 0
+[2025-12-16 19:01:07.534] [info] [1199694] [LocalCameraGateway] 码率分配更新循环线程退出
+[2025-12-16 19:01:07.534] [info] [1199680] [LocalCameraGateway] 码率分配更新线程已停止
+[2025-12-16 19:01:15.506] [info] [1199692] [HealthMonitor] 流健康监控线程退出
+[2025-12-16 19:01:15.506] [info] [1199680] [HealthMonitor] 健康监控已停止
+[2025-12-16 19:01:15.537] [debug] [1199685] Phase 2.1: Preparing stream updates (lock-free)...
+[2025-12-16 19:01:15.537] [debug] [1199685] Phase 2.1: Snapshot took 0μs (lock held)
+[2025-12-16 19:01:15.537] [info] [1199685] Phase 2.1: PrepareStreamUpdates completed: 0 streams, 34μs total (snapshot: 0μs)
+[2025-12-16 19:01:15.537] [debug] [1199685] Phase 2.1: Prepared 0 updates
+[2025-12-16 19:01:15.537] [debug] [1199685] Phase 2.1: Applying stream updates (brief lock)...
+[2025-12-16 19:01:15.537] [info] [1199685] Phase 2.1: ApplyStreamUpdates: 0 streams, lock held: 0μs, total: 0μs
+[2025-12-16 19:01:15.537] [debug] [1199685] 同步 ZLMediaKit 状态完成，更新了 0 个流，自动注册了 0 个新流
+[2025-12-16 19:01:25.548] [debug] [1199685] Phase 2.1: Preparing stream updates (lock-free)...
+[2025-12-16 19:01:25.548] [debug] [1199685] Phase 2.1: Snapshot took 0μs (lock held)
+[2025-12-16 19:01:25.548] [info] [1199685] Phase 2.1: PrepareStreamUpdates completed: 0 streams, 6μs total (snapshot: 0μs)
+[2025-12-16 19:01:25.548] [debug] [1199685] Phase 2.1: Prepared 0 updates
+[2025-12-16 19:01:25.548] [debug] [1199685] Phase 2.1: Applying stream updates (brief lock)...
+[2025-12-16 19:01:25.548] [info] [1199685] Phase 2.1: ApplyStreamUpdates: 0 streams, lock held: 0μs, total: 0μs
+[2025-12-16 19:01:25.548] [debug] [1199685] 同步 ZLMediaKit 状态完成，更新了 0 个流，自动注册了 0 个新流
+[2025-12-16 19:01:35.503] [info] [1199690] GB28181 Gateway 心跳检查线程退出
+[2025-12-16 19:01:35.505] [info] [1199691] GB28181 Gateway 流状态检查线程退出
+[2025-12-16 19:01:35.506] [info] [1199689] SipServer 消息处理线程退出
+[2025-12-16 19:01:35.515] [info] [1199688] SipServer 接收线程退出
+[2025-12-16 19:01:35.515] [info] [1199680] SipServer 已停止
+[2025-12-16 19:01:35.515] [info] [1199680] GB28181 Gateway SIP服务器已停止
+[2025-12-16 19:01:35.515] [info] [1199680] 停止状态同步线程
+[2025-12-16 19:01:35.515] [info] [1199680] Stream Manager 析构完成
+[2025-12-16 19:01:35.515] [info] [1199680] 所有进程已停止
+[2025-12-16 19:01:36.506] [info] [1199684] 进程监控线程退出
+[2025-12-16 19:01:36.506] [info] [1199680] Process Manager 析构完成

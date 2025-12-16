@@ -3,7 +3,7 @@
         "http_port": 8080,
         "ws_port": 8092,
         "log_level": "info",
-        "log_file": "logs/gateway.log",
+        "log_file": "/var/log/zlm-gateway/gateway.log",
         "total_bandwidth_mbps": 100
     },
     "zlmediakit": {
@@ -22,7 +22,9 @@
     },
     "gateways": {
         "rtsp": {
-            "enabled": true
+            "enabled": true,
+            "ffmpeg_path": "ffmpeg",
+            "ffprobe_path": "ffprobe"
         },
         "rtmp": {
             "enabled": true

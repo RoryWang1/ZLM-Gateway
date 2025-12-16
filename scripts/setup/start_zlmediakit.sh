@@ -20,7 +20,7 @@ if [ -f "$PROJECT_ROOT/configs/config.json" ]; then
 fi
 
 # 检查 ZLMediaKit 是否已运行
-if curl -s "http://localhost:${ZLM_HTTP_PORT}/index/api/getServerConfig" > /dev/null 2>&1; then
+if curl --noproxy "*" -s "http://localhost:${ZLM_HTTP_PORT}/index/api/getServerConfig" > /dev/null 2>&1; then
     echo "✅ ZLMediaKit 已在运行 (端口: ${ZLM_HTTP_PORT})"
     exit 0
 fi
@@ -38,6 +38,8 @@ else
     for path in \
         "$PROJECT_ROOT/third_party/zlmediakit/release/darwin/Release/MediaServer" \
         "$PROJECT_ROOT/third_party/zlmediakit/release/mac/Release/MediaServer" \
+        "$PROJECT_ROOT/third_party/zlmediakit/release/linux/Release/MediaServer" \
+        "$PROJECT_ROOT/third_party/zlmediakit/release/linux/Debug/MediaServer" \
         "/usr/local/MediaServer" \
         "/opt/MediaServer" \
         "$HOME/zlmediakit/release/mac/MediaServer" \
@@ -97,14 +99,14 @@ if [ -f "$ZLM_CONFIG_FILE" ]; then
     cp "$ZLM_CONFIG_FILE" "$CONFIG_TARGET_PATH"
     ZLM_CONFIG_TARGET="$CONFIG_TARGET_PATH"
     cd "$MEDIASERVER_ABS_DIR"
-    "$MEDIASERVER" -d &
+    nohup "$MEDIASERVER" -d > /dev/null 2>&1 &
 elif [ -n "$CONFIG_DIR" ]; then
     echo "   使用配置目录: $CONFIG_DIR"
     cd "$CONFIG_DIR"
-    "$MEDIASERVER" -d &
+    nohup "$MEDIASERVER" -d > /dev/null 2>&1 &
 else
     echo "   使用默认配置"
-    "$MEDIASERVER" -d &
+    nohup "$MEDIASERVER" -d > /dev/null 2>&1 &
 fi
 
 MEDIASERVER_PID=$!

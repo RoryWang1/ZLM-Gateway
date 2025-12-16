@@ -8,7 +8,7 @@
 
 - **语言**: C++17
 - **流媒体服务器**: ZLMediaKit (C++)
-- **协议转换**: FFmpeg (libav) 或 GStreamer
+- **协议转换**: FFmpeg (libav)
 - **HTTP服务器**: httplib
 - **HTTP客户端**: libcurl
 - **JSON处理**: nlohmann/json
@@ -33,7 +33,7 @@ ZLM-gateway/
 │   │   └── ndi/          # NDI Gateway
 │   ├── streaming/         # 流媒体服务器管理
 │   │   ├── zlmediakit/   # ZLMediaKit集成
-│   │   └── gstreamer/    # GStreamer集成（可选）
+
 │   ├── config/            # 配置管理
 │   ├── api/               # HTTP API服务器
 │   ├── utils/             # 工具类
@@ -52,32 +52,33 @@ ZLM-gateway/
 
 ### 1. 安装依赖
 
-**注意**: 项目已包含 FFmpeg 预编译二进制文件（位于 `third_party/ffmpeg/`），无需单独下载。
+**注意**: 项目已包含 FFmpeg 预编译二进制文件（位于 `third_party/ffmpeg/`），无需单独下载。但是对于 Linux ARM64 (Ubuntu)，推荐使用系统源安装。
 
-**Ubuntu/Debian:**
+**Ubuntu/Debian (推荐 ARM64 使用):**
 ```bash
 make deps-ubuntu
-# 或手动安装（FFmpeg 开发库，用于编译时链接）
+# 或手动安装
 sudo apt-get update
 sudo apt-get install -y \
     build-essential \
     g++ \
     pkg-config \
+    ffmpeg \
     libavformat-dev \
     libavcodec-dev \
     libavutil-dev \
     libavfilter-dev \
     libswscale-dev \
-    libcurl4-openssl-dev \
-    libgstreamer1.0-dev \
-    libgstreamer-plugins-base1.0-dev
+    libcurl4-openssl-dev
+
 ```
 
 **macOS:**
 ```bash
 make deps-macos
 # 或手动安装（FFmpeg 开发库，用于编译时链接）
-brew install cmake pkg-config ffmpeg curl gstreamer gst-plugins-base
+brew install cmake pkg-config ffmpeg curl
+
 ```
 
 **说明**:
