@@ -55,6 +55,7 @@ struct StreamMetadata {
                                // "onvif_gateway", etc.
   std::string processing_type; // 处理类型: "0"(Direct Proxy), "1"(FFmpeg Copy),
                                // "2"(FFmpeg Transcode)
+  std::string transcoding_reason; // 转码原因（如果是 FFmpeg Transcode）
 
   // 从 ZLMediaKit 同步的状态信息（可选）
   bool zlm_alive = false; // ZLMediaKit 中的流是否存活

@@ -34,6 +34,8 @@ struct StreamProcessResult {
   std::string source_video_codec;
   int source_width = 0;
   int source_height = 0;
+
+  std::string transcoding_reason; // 转码原因
 };
 
 /**
@@ -147,7 +149,8 @@ public:
                       const std::string &output_protocol,
                       const std::string &source_url,
                       const std::string &gateway_type, GatewayStatus status,
-                      int pid, const std::string &processing_type = "0");
+                      int pid, const std::string &processing_type = "0",
+                      const std::string &transcoding_reason = "");
 
   /**
    * @brief 报告流创建结果到 StreamManager
@@ -177,7 +180,8 @@ private:
   void MakeTranscodingDecision(const StreamInfoResult &stream_info_result,
                                const std::string &protocol,
                                const std::string &output_protocol,
-                               bool &use_ffmpeg, bool &video_only_transcode);
+                               bool &use_ffmpeg, bool &video_only_transcode,
+                               std::string &transcoding_reason);
 
   /**
    * @brief 直接代理结果

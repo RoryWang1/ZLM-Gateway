@@ -77,6 +77,11 @@ void FFmpegCommandBuilder::BuildDeviceInput(
   // Linux: v4l2 + alsa
   int input_fps = options.input_fps > 0 ? options.input_fps
                                         : config_->local_camera.default_fps;
+
+  if (input_fps <= 0) {
+    LOG_WARN("Input FPS is invalid ({}), falling back to 30", input_fps);
+    input_fps = 30;
+  }
   oss << " -f v4l2 -framerate " << input_fps << " -i " << options.input_url;
 
   if (!options.audio_input_format.empty()) {

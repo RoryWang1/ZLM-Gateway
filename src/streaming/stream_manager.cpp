@@ -171,6 +171,11 @@ void StreamManager::BroadcastStreamUpdate(StreamMetadata &metadata,
   if (removed) {
     json_data["removed"] = true;
   }
+
+  // 添加转码原因（如果有）
+  if (!metadata.transcoding_reason.empty()) {
+    json_data["transcoding_reason"] = metadata.transcoding_reason;
+  }
   // 可以添加更多字段
   LOG_INFO("Broadcasting stream update: app={}, stream={}, status={}",
            metadata.app, metadata.stream, (int)metadata.status);

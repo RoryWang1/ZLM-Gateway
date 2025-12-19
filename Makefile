@@ -26,16 +26,12 @@ ifeq ($(UNAME_S),Darwin)
     else
         FFMPEG_PLATFORM = macos-x86_64
     endif
+
 else
-    ifeq ($(UNAME_M),x86_64)
-        FFMPEG_PLATFORM = linux-x86_64
-    else ifeq ($(UNAME_M),aarch64)
-        FFMPEG_PLATFORM = linux-arm64
-        # Linux ARM64 (Ubuntu) 推荐完全使用系统依赖
-        USE_SYSTEM_DEPS = 1
-    else
-        FFMPEG_PLATFORM = linux-x86_64
-    endif
+    # Linux (Generic)
+    FFMPEG_PLATFORM = linux
+    # Linux 推荐完全使用系统依赖
+    USE_SYSTEM_DEPS = 1
 endif
 
 # 如果设置了 USE_SYSTEM_DEPS，打印提示

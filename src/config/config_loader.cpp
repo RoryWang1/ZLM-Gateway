@@ -86,6 +86,20 @@ void ConfigLoader::ParseJSON(const json &j, Config &config) {
       if (sd.contains("timeout_seconds"))
         config.gateway.stream_detection.timeout_seconds = sd["timeout_seconds"];
     }
+
+    // WebRTC 兼容性配置
+    if (gw.contains("webrtc_compat")) {
+      const auto &wc = gw["webrtc_compat"];
+      if (wc.contains("allowed_profiles"))
+        config.gateway.webrtc_compat.allowed_profiles =
+            wc["allowed_profiles"].get<std::vector<std::string>>();
+      if (wc.contains("allowed_pixel_formats"))
+        config.gateway.webrtc_compat.allowed_pixel_formats =
+            wc["allowed_pixel_formats"].get<std::vector<std::string>>();
+      if (wc.contains("allowed_audio_codecs"))
+        config.gateway.webrtc_compat.allowed_audio_codecs =
+            wc["allowed_audio_codecs"].get<std::vector<std::string>>();
+    }
   }
 
   // ZLMediaKit 配置
@@ -337,10 +351,26 @@ void ConfigLoader::ParseJSON(const json &j, Config &config) {
   }
 }
 
-void ConfigLoader::SetDefaults(Config & /* config */) {
+void ConfigLoader::SetDefaults(Config &config) {
   // 默认值已在结构体定义中设置
-  // 这里可以添加额外的默认值设置逻辑
-  // 参数暂时未使用，使用注释参数名避免警告
+  // 这里设置 WebRTC 兼容性默认值 (白名单)
+  if (config.gateway.webrtc_compat.allowed_profiles.empty()) {
+    config.gateway.webrtc_compat.allowed_profiles = {"Baseline",
+                                                     "Constrained Baseline"};
+    // Main/High profile
+    // 即使浏览器支持，通常也可能引起解码问题或延迟，默认采取保守策略 用户可以在
+    // config.ini 中自行添加 "Main", "High" 如果他们确认环境支持
+  }
+  if (config.gateway.webrtc_compat.allowed_pixel_formats.empty()) {
+    config.gateway.webrtc_compat.allowed_pixel_formats = {"yuv420p",
+                                                          "yuvj420p"};
+    // 浏览器通常只支持 4:2:0
+  }
+  if (config.gateway.webrtc_compat.allowed_audio_codecs.empty()) {
+    config.gateway.webrtc_compat.allowed_audio_codecs = {"aac", "opus", "pcma",
+                                                         "pcmu"};
+    // G.711 (pcma/pcmu) 和 AAC/Opus 是 WebRTC 常用编码
+  }
 }
 
 } // namespace config

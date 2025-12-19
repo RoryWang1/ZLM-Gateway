@@ -15,7 +15,7 @@ interface CustomAxiosInstance extends Omit<AxiosInstance, 'get' | 'post' | 'put'
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,  // 默认10秒超时，对于设备列表等简单查询足够
+  timeout: 30000,  // 默认30秒超时，防止流启动等耗时操作触发误报
   headers: {
     'Content-Type': 'application/json',
   },

@@ -169,6 +169,8 @@ LocalCameraGateway::LocalCameraGateway(
 
   // 构建 ZLMediaKit RTMP 推流地址
   std::ostringstream oss;
+  LOG_INFO("[LocalCameraGateway] Configured RTMP Port: {}",
+           config_->zlmediakit.rtmp_port);
   oss << "rtmp://127.0.0.1:" << config_->zlmediakit.rtmp_port;
   zlm_rtmp_url_ = oss.str();
 
