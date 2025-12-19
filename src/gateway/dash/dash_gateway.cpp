@@ -324,7 +324,7 @@ std::string DASHGateway::BuildOptimizedFFmpegCommand(const StreamInfo& info,
                                                      const gateway::utils::StreamInfoResult& stream_info_result,
                                                      int bitrate_kbps) {
     
-    // 如果输出协议是 WebRTC，直接使用强制转码参数，但使用检测到的分辨率
+    // 如果输出协议是 WebRTC，尝试使用 Direct Proxy 策略 (Video Copy + Audio Transcode)
     if (info.output_protocol == "webrtc") {
         std::ostringstream oss;
         oss << ffmpeg_path_
@@ -332,14 +332,29 @@ std::string DASHGateway::BuildOptimizedFFmpegCommand(const StreamInfo& info,
             << " -analyzeduration 20000000"
             << " -probesize 20000000"
             << " -i \"" << info.source_url << "\"";
-        ::utils::FFmpegParams::AddWebRTCEncodingParams(oss, bitrate_kbps, false,
-                                                        stream_info_result.video_width,
-                                                        stream_info_result.video_height);
-        // WebRTC 模式：推 RTMP/FLV 到 ZLM，与 RTSP Gateway 保持一致，避免兼容性问题
+            
+        // 检查视频兼容性
+        if (gateway::utils::StreamInfoDetector::IsVideoCodecCompatible(stream_info_result.video_codec)) {
+            // 视频兼容 (H.264)，直接复制
+            oss << " -c:v copy";
+            LOG_DEBUG("DASH Gateway (Optimized): WebRTC 视频兼容 (H.264)，使用 Copy 模式");
+        } else {
+            // 视频不兼容，使用强制转码参数
+            ::utils::FFmpegParams::AddWebRTCEncodingParams(oss, bitrate_kbps, false,
+                                                            stream_info_result.video_width,
+                                                            stream_info_result.video_height);
+            LOG_DEBUG("DASH Gateway (Optimized): WebRTC 视频不兼容，强制转码");
+        }
+
+        // 音频必须转码为 AAC (WebRTC 兼容)
+        // 注意：WebRTC 标准推荐 Opus，但 ZLM 对 AAC 支持良好且兼容性更广
+        oss << " -c:a aac -b:a 128k -ar 48000 -ac 2";
+
+        // WebRTC 模式：推 RTMP/FLV 到 ZLM
         oss << " -f flv"
             << " \"" << ::utils::zlm_url_builder::BuildRTMPUrlWithSecret(
                 config_, info.target_app, info.target_stream, "DASH Gateway") << "\"";
-        LOG_DEBUG("DASH Gateway (Optimized): 强制使用 WebRTC 兼容转码参数，推流格式：RTMP/FLV");
+        
         return oss.str();
     }
     if (!stream_info_result.valid) {

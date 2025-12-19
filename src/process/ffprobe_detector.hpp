@@ -18,6 +18,8 @@ struct StreamCodecInfo {
     int bitrate = 0;             // 码率（bps）
     double fps = 0.0;            // 帧率
     std::string pixel_format;    // 像素格式（视频）
+    std::string profile;         // Profile (Baseline, Main, High)
+    std::string level;           // Level (3.1, 4.0, etc.)
     int sample_rate = 0;         // 采样率（音频）
     int channels = 0;            // 声道数（音频）
 };

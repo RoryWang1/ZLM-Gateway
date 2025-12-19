@@ -283,6 +283,20 @@ StreamInfo FFprobeDetector::ParseJSONOutput(const std::string& json_output) {
                     codec.channels = stream["channels"].get<int>();
                 }
                 
+                // 【新增】解析 profile 和 level
+                if (stream.contains("profile")) {
+                    codec.profile = stream["profile"].get<std::string>();
+                }
+                if (stream.contains("level")) {
+                     // level 可能是数字或字符串，统一转为字符串
+                    auto level_json = stream["level"];
+                    if (level_json.is_number()) {
+                         codec.level = std::to_string(level_json.get<int>());
+                    } else if (level_json.is_string()) {
+                         codec.level = level_json.get<std::string>();
+                    }
+                }
+                
                 info.codecs.push_back(codec);
             }
         }

@@ -97,11 +97,13 @@ export default function FLVPlayer({
       },
       {
         // 对于 live 流，flv.js 会自动跳转到最新数据
-        // enableStashBuffer: true 允许 flv.js 缓冲数据并自动跳转到最新时间戳
-        enableStashBuffer: shouldDisableJump ? false : true,  // 对于ZLM代理流，启用stash buffer以支持跳转到最新数据
-        stashInitialSize: shouldDisableJump ? 16 : 128,  // 对于ZLM代理流，使用正常缓冲区大小
+        // 对于 live 流，flv.js 会自动跳转到最新数据
+        // enableStashBuffer: false 禁用缓冲区积压，实现低延迟（容易卡顿但实时性高）
+        // 对于 ZLM 代理流，如果追求极低延迟，建议关闭；如果追求流畅，建议开启并调小
+        enableStashBuffer: false, // 追求极致实时性，禁用 stash buffer
+        stashInitialSize: 16,  // 即使开启，也使用最小初始缓冲区
         lazyLoad: false,  // 关闭懒加载，确保立即开始加载数据
-        lazyLoadMaxDuration: shouldDisableJump ? 0.1 : 1,  // 对于ZLM代理流，使用正常的懒加载持续时间
+        lazyLoadMaxDuration: 0.2,  // 极短的懒加载周期
         enableWorker: false,
         autoCleanupSourceBuffer: true,
         fixAudioTimestampGap: true,  // 启用音频时间戳修复（即使没有音频也不会有问题）
@@ -137,28 +139,28 @@ export default function FLVPlayer({
       if (loadingRef.current && videoRef.current) {
         const readyState = videoRef.current.readyState;
         console.log(`[FLVPlayer] Ready state: ${readyState}, canplay: ${videoRef.current.readyState >= 2}`);
-        
+
         // readyState >= 2 (HAVE_CURRENT_DATA) 表示有足够数据可以播放
         if (readyState >= 2) {
           loadingRef.current = false;
-      setLoading(false);
-      if (autoPlay && videoRef.current) {
-        // 尝试自动播放，但不强制静音
-        // 如果浏览器阻止自动播放，用户可以点击播放按钮
-        const playPromise = videoRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.catch((e) => {
-            // NotAllowedError: 浏览器阻止了自动播放，这是正常的
-            // 用户需要点击播放按钮来开始播放
-            if (e.name === 'NotAllowedError') {
-              console.log('[FLVPlayer] 浏览器阻止了自动播放，请点击播放按钮');
-              setIsPlaying(false);
-            } else if (e.name !== 'AbortError') {
-              console.error('[FLVPlayer] Auto play failed:', e);
+          setLoading(false);
+          if (autoPlay && videoRef.current) {
+            // 尝试自动播放，但不强制静音
+            // 如果浏览器阻止自动播放，用户可以点击播放按钮
+            const playPromise = videoRef.current.play();
+            if (playPromise !== undefined) {
+              playPromise.catch((e) => {
+                // NotAllowedError: 浏览器阻止了自动播放，这是正常的
+                // 用户需要点击播放按钮来开始播放
+                if (e.name === 'NotAllowedError') {
+                  console.log('[FLVPlayer] 浏览器阻止了自动播放，请点击播放按钮');
+                  setIsPlaying(false);
+                } else if (e.name !== 'AbortError') {
+                  console.error('[FLVPlayer] Auto play failed:', e);
+                }
+              });
             }
-          });
-        }
-      }
+          }
         }
       }
     };
@@ -190,7 +192,7 @@ export default function FLVPlayer({
       // 如果是程序内部操作（如跳转）导致的暂停，不应该停止播放器
       const video = videoRef.current;
       if (!video) return;
-      
+
       // 如果是因为跳转导致的短暂暂停，忽略它
       // 通过检查是否在跳转后的短时间内来判断
       const now = Date.now();
@@ -205,11 +207,11 @@ export default function FLVPlayer({
             // 检查是否有缓冲区数据，如果有数据说明流是正常的
             const buffered = video.buffered;
             const hasBuffer = buffered.length > 0 && buffered.end(buffered.length - 1) > 0;
-            
+
             // 检查视频是否已经播放了一段时间（至少0.5秒），避免在刚开始播放时就恢复
             const minPlayTime = 0.5;
             const hasPlayedEnough = video.currentTime >= minPlayTime;
-            
+
             if ((hasBuffer || hasPlayedEnough) && video.readyState >= 2) {
               console.log('[FLVPlayer] Video paused after jump, resuming playback (gentle resume)');
               video.play().catch((e) => {
@@ -226,7 +228,7 @@ export default function FLVPlayer({
         }, 200);
         return;
       }
-      
+
       console.log('[FLVPlayer] handlePause called (user action or real pause)');
       setIsPlaying(false);
       // 必须暂停FLV播放器以停止数据流
@@ -495,19 +497,19 @@ export default function FLVPlayer({
     videoRef.current.addEventListener('play', handlePlay);
     videoRef.current.addEventListener('pause', handlePause);
     videoRef.current.addEventListener('error', handleVideoError);
-    
+
     // 监听视频结束事件（对于FLV输入FLV输出流，可能需要特殊处理）
     const handleVideoEnded = () => {
       console.warn('[FLVPlayer] Video ended event fired');
       // 对于直播流，ended事件不应该触发，如果触发了可能是流有问题
       // 检查是否是FLV输入FLV输出流（本地流）
       const isLocalFLVStream = url.includes('localhost') || url.includes('127.0.0.1');
-      
+
       if (isLocalFLVStream && videoRef.current) {
         // 检查是否真的结束了（没有更多数据）
         const buffered = videoRef.current.buffered;
         const hasBuffer = buffered.length > 0 && buffered.end(buffered.length - 1) > videoRef.current.currentTime;
-        
+
         if (!hasBuffer) {
           console.warn('[FLVPlayer] FLV input stream ended with no buffer, stream may have stopped');
           // 流可能真的结束了，不尝试恢复
@@ -527,14 +529,14 @@ export default function FLVPlayer({
         }
       }
     };
-    
+
     videoRef.current.addEventListener('ended', handleVideoEnded);
     player.on(flvjs.Events.ERROR, handleError);
 
     // 低延迟跳帧逻辑：如果缓冲区积压超过阈值就跳帧
     // 注意：对于FLV输入FLV输出的流，跳转可能导致MediaSource结束，所以禁用跳转
     // isLocalFLVStream 和 shouldDisableJump 已在上面定义
-    
+
     const interval = setInterval(() => {
       if (videoRef.current && !videoRef.current.paused && videoRef.current.readyState >= 2) {
         const buffered = videoRef.current.buffered;
@@ -550,24 +552,24 @@ export default function FLVPlayer({
           const bufferThreshold = shouldDisableJump ? 5.0 : 1.0;  // FLV输入FLV输出使用5秒阈值
           const minPlayTimeBeforeJump = shouldDisableJump ? 10.0 : 3.0;  // FLV输入FLV输出需要播放10秒
           const videoPlayTime = videoRef.current.currentTime;
-          
-          if (bufferAhead > bufferThreshold && 
-              (now - lastJumpTimeRef.current) > 2000 && 
-              videoPlayTime >= minPlayTimeBeforeJump &&
-              !shouldDisableJump) {  // 对于FLV输入FLV输出，完全禁用跳转
+
+          if (bufferAhead > bufferThreshold &&
+            (now - lastJumpTimeRef.current) > 2000 &&
+            videoPlayTime >= minPlayTimeBeforeJump &&
+            !shouldDisableJump) {  // 对于FLV输入FLV输出，完全禁用跳转
             console.log(`[FLVPlayer] Buffer too high (${bufferAhead.toFixed(2)}s), jumping to live edge (currentTime=${videoPlayTime.toFixed(2)}s)`);
             const targetTime = bufferedEnd - 0.2;  // 保留0.2秒安全缓冲
-            
+
             // 记录跳转时间，用于在 handlePause 中判断
             // 在跳转前记录，确保 handlePause 能正确识别
             lastJumpTimeRef.current = now;
-            
+
             // 执行跳转
             // 注意：不要立即调用 play()，让浏览器自然处理跳转
             // 如果视频正在播放，跳转后应该继续播放，不需要手动恢复
             // 调用 play() 可能导致视频重新开始播放（从0开始）
             videoRef.current.currentTime = targetTime;
-            
+
             // 不在这里恢复播放，让浏览器自然处理跳转
             // 如果视频被暂停，handlePause 会处理（但会忽略跳转引起的暂停）
           } else if (shouldDisableJump && bufferAhead > bufferThreshold) {
@@ -576,7 +578,7 @@ export default function FLVPlayer({
             if ((now - lastJumpTimeRef.current) > 5000) {  // 每5秒检查一次
               console.log(`[FLVPlayer] Buffer too high (${bufferAhead.toFixed(2)}s) for FLV input stream, using playback speed adjustment`);
               lastJumpTimeRef.current = now;
-              
+
               // 根据缓冲区大小调整播放速度
               // 缓冲区越大，加速越快，但不要超过1.2倍速（避免音调变化太明显）
               let speedMultiplier = 1.0;
@@ -587,12 +589,12 @@ export default function FLVPlayer({
               } else if (bufferAhead > 10.0) {
                 speedMultiplier = 1.05; // 缓冲区超过10秒，加速5%
               }
-              
+
               // 如果当前播放速度是1.0，应用加速
               if (videoRef.current && videoRef.current.playbackRate === 1.0 && speedMultiplier > 1.0) {
                 videoRef.current.playbackRate = speedMultiplier;
                 console.log(`[FLVPlayer] Increased playback rate to ${speedMultiplier.toFixed(2)}x to reduce buffer (${bufferAhead.toFixed(2)}s ahead)`);
-                
+
                 // 根据缓冲区大小调整加速持续时间
                 // 缓冲区越大，加速时间越长
                 const duration = bufferAhead > 60.0 ? 3000 : (bufferAhead > 30.0 ? 2000 : 1000);
@@ -634,13 +636,13 @@ export default function FLVPlayer({
 
       console.log('[FLVPlayer] Metadata arrived:', meta);
       // 不再计算和显示延迟
-      
+
       // 收到metadata后，检查是否可以播放
       setTimeout(() => {
         handleReadyToPlay();
       }, 100);
     });
-    
+
     // 监听数据统计事件，检查是否有数据包到达
     // 只在播放开始时输出一次，之后只在出现问题时输出
     let hasLoggedPlaybackStart = false;
@@ -649,7 +651,7 @@ export default function FLVPlayer({
         const readyState = videoRef.current.readyState;
         const buffered = videoRef.current.buffered;
         const bufferedLength = buffered.length;
-        
+
         // 只在首次开始播放时输出一次日志（减少日志输出）
         // 注意：readyState >= 4 (HAVE_FUTURE_DATA) 表示有足够数据可以流畅播放
         // 但不要输出"推流播放"这样的消息，避免用户困惑
@@ -657,7 +659,7 @@ export default function FLVPlayer({
           hasLoggedPlaybackStart = true;
           // 不再输出日志，避免控制台噪音
         }
-        
+
         // 如果readyState还是0但已经有统计数据，说明数据在传输但可能有问题
         if (readyState === 0 && info && (info.speed || info.droppedFrames)) {
           // 检查是否有视频数据但无法写入SourceBuffer
@@ -667,7 +669,7 @@ export default function FLVPlayer({
         }
       }
     });
-    
+
     // 监听LOADING_COMPLETE事件，检查加载是否完成
     player.on(flvjs.Events.LOADING_COMPLETE, () => {
       console.log('[FLVPlayer] Loading complete event fired');
@@ -675,13 +677,13 @@ export default function FLVPlayer({
         handleReadyToPlay();
       }, 100);
     });
-    
+
     // 添加定期检查，确保在收到数据后能及时更新状态
     const readyCheckInterval = setInterval(() => {
       if (loadingRef.current && videoRef.current) {
         const readyState = videoRef.current.readyState;
         const networkState = videoRef.current.networkState;
-        
+
         if (readyState >= 2) {
           handleReadyToPlay();
         } else if (readyState === 0 && networkState === HTMLMediaElement.NETWORK_IDLE) {
@@ -701,13 +703,13 @@ export default function FLVPlayer({
       // player.off(flvjs.Events.MEDIA_INFO, handleMediaInfo);
 
       clearInterval(readyCheckInterval);
-      
+
       // 清除加速播放的定时器
       if (speedAdjustTimeoutRef.current) {
         clearTimeout(speedAdjustTimeoutRef.current);
         speedAdjustTimeoutRef.current = null;
       }
-      
+
       // 恢复播放速度
       if (videoRef.current && videoRef.current.playbackRate !== 1.0) {
         videoRef.current.playbackRate = 1.0;

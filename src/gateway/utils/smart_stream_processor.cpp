@@ -128,7 +128,9 @@ StreamProcessResult SmartStreamProcessor::ProcessStream(
     // 3. 智能转码决策
     bool use_ffmpeg = false;
     bool video_only_transcode = false;
-    MakeTranscodingDecision(result.stream_info, protocol, output_protocol, use_ffmpeg, video_only_transcode);
+
+    MakeTranscodingDecision(result.stream_info, protocol, output_protocol, use_ffmpeg, video_only_transcode, result.transcoding_reason);
+    result.use_ffmpeg = use_ffmpeg;
     result.use_ffmpeg = use_ffmpeg;
 
     result.video_only_transcode = video_only_transcode;
@@ -167,7 +169,7 @@ StreamProcessResult SmartStreamProcessor::ProcessStream(
             
             // 注册流到 StreamManager
             RegisterStream(target_app, target_stream, protocol, output_protocol,
-                          source_url, gateway_type, result.status, 0, processing_type);
+                          source_url, gateway_type, result.status, 0, processing_type, result.transcoding_reason);
             
             // 报告成功
             ReportStreamResult(target_app, target_stream, true);
@@ -223,7 +225,7 @@ StreamProcessResult SmartStreamProcessor::ProcessStream(
                             
                             // 注册流到 StreamManager
                             RegisterStream(target_app, target_stream, protocol, output_protocol,
-                                          source_url, gateway_type, result.status, 0, processing_type);
+                                          source_url, gateway_type, result.status, 0, processing_type, result.transcoding_reason);
                             
                             // 报告成功
                             ReportStreamResult(target_app, target_stream, true);
@@ -265,7 +267,7 @@ StreamProcessResult SmartStreamProcessor::ProcessStream(
             
             // 注册流到 StreamManager
             RegisterStream(target_app, target_stream, protocol, output_protocol,
-                          source_url, gateway_type, result.status, result.pid, processing_type);
+                          source_url, gateway_type, result.status, result.pid, processing_type, result.transcoding_reason);
             
             // 报告成功
             ReportStreamResult(target_app, target_stream, true);
@@ -281,7 +283,7 @@ StreamProcessResult SmartStreamProcessor::ProcessStream(
             
             // 注册错误状态到 StreamManager
             RegisterStream(target_app, target_stream, protocol, output_protocol,
-                          source_url, gateway_type, result.status, result.pid, processing_type);
+                          source_url, gateway_type, result.status, result.pid, processing_type, result.transcoding_reason);
             
             // 报告失败
             ReportStreamResult(target_app, target_stream, false, error_code, error_message);
@@ -299,7 +301,8 @@ void SmartStreamProcessor::RegisterStream(const std::string& target_app,
                                          const std::string& gateway_type,
                                          GatewayStatus status,
                                          int pid,
-                                         const std::string& processing_type) {
+                                         const std::string& processing_type,
+                                         const std::string& transcoding_reason) {
     if (!stream_manager_) {
         return;
     }
@@ -315,6 +318,7 @@ void SmartStreamProcessor::RegisterStream(const std::string& target_app,
                     streaming::StreamStatus::Running : streaming::StreamStatus::Starting;
     metadata.pid = pid;
     metadata.processing_type = processing_type;
+    metadata.transcoding_reason = transcoding_reason;
     
     // 对于 local-camera 协议，从 source_url 提取 device_id
     if (protocol == "local-camera" && !source_url.empty()) {
@@ -372,9 +376,11 @@ void SmartStreamProcessor::MakeTranscodingDecision(const StreamInfoResult& strea
                                                    const std::string& protocol,
                                                    const std::string& output_protocol,
                                                    bool& use_ffmpeg,
-                                                   bool& video_only_transcode) {
+                                                   bool& video_only_transcode,
+                                                   std::string& transcoding_reason) {
     use_ffmpeg = false;
     video_only_transcode = false;
+    transcoding_reason = "";
     
     // 1. 特殊协议处理：HLS
     // HLS 源可能是 VOD（点播），ZLM 直接代理会全速读取导致卡顿
@@ -382,20 +388,49 @@ void SmartStreamProcessor::MakeTranscodingDecision(const StreamInfoResult& strea
     if (protocol == "hls") {
         LOG_INFO("[SmartStreamProcessor] HLS protocol detected, forcing FFmpeg to enable -re throttling for VOD sources");
         use_ffmpeg = true;
+        transcoding_reason = "HLS Input (VOD Throttling)";
         return;
     }
 
     // 2. 特殊输出协议处理：WebRTC
-    // WebRTC 对音频（Opus/PCMA/PCMU）和视频（H.264 Baseline/Constrained Baseline）有严格要求
-    // 即使源是 H.264+AAC，WebRTC 也需要 Opus 音频，所以几乎总是需要转码
-    // 为了保证稳定性，WebRTC 输出强制使用 FFmpeg
+    // 使用统一的 WebRTC 兼容性策略
     if (output_protocol == "webrtc") {
-        LOG_INFO("[SmartStreamProcessor] WebRTC output requested, forcing FFmpeg for strict codec compatibility");
-        use_ffmpeg = true;
-        return;
+        std::string compatibility_reason;
+        
+        // 获取配置（如果有）
+        config::Config::GatewayConfig::WebRTCCompatibilityConfig webrtc_config;
+        if (config_) {
+            webrtc_config = config_->gateway.webrtc_compat;
+        } else {
+             // 默认值（如果没有配置对象），虽然 config_loader 已有默认值，但防守编程
+             webrtc_config.allowed_profiles = {"Baseline", "Constrained Baseline"};
+             webrtc_config.allowed_pixel_formats = {"yuv420p"};
+             webrtc_config.allowed_audio_codecs = {"aac", "opus", "pcma", "pcmu", "g711"};
+        }
+
+        bool compatible = StreamInfoDetector::IsWebRTCCompatible(stream_info_result, webrtc_config, compatibility_reason);
+        
+        if (!compatible) {
+             LOG_INFO("[SmartStreamProcessor] WebRTC Incompatible: {}, falling back to FFmpeg (Reason: {})", 
+                      compatibility_reason, compatibility_reason);
+             use_ffmpeg = true;
+             transcoding_reason = compatibility_reason;
+             // 注意：这里暂时不区分 Video Only Transcode。如果 IsWebRTCCompatible 返回 false，通常意味着视频或音频至少有一个不行。
+             // 更精细的 StreamInfoDetector::CanUseVideoCopy 可以在这里使用，但 FFprobeDetector 已经能生成优化参数。
+             // 只要 use_ffmpeg = true，FFmpegCommandBuilder 会根据输入输出自动决定 Copy 还是 Transcode。
+             // 后续可以优化 video_only_transcode 标志位以更精确控制 metadata
+             if (StreamInfoDetector::IsVideoCodecCompatible(stream_info_result.video_codec) &&
+                 !StreamInfoDetector::IsAudioCodecCompatible(stream_info_result.audio_codec)) {
+                 video_only_transcode = true; // 仅音频转码
+             }
+             return;
+        } else {
+             LOG_INFO("[SmartStreamProcessor] WebRTC Compatible (Deep Check Passed), allowing Direct Proxy");
+        }
     }
     
     // 3. 智能兼容性检测 (Direct Proxy First)
+    // 即使不是 WebRTC，或者 WebRTC 检查通过，最后再做一次通用检查
     if (stream_info_result.valid) {
         // 使用检测到的完整流信息进行智能决策
         bool video_compatible = StreamInfoDetector::IsVideoCodecCompatible(stream_info_result.video_codec);
@@ -405,18 +440,21 @@ void SmartStreamProcessor::MakeTranscodingDecision(const StreamInfoResult& strea
             // 视频和音频都兼容，优先使用直接代理
             // 这包括 RTSP, RTMP, HTTP-FLV 等常见协议
             use_ffmpeg = false;
+            transcoding_reason = ""; // Direct Proxy 不需要原因
             LOG_INFO("[SmartStreamProcessor] Video({}) and audio({}) are both compatible, using direct proxy", 
                     stream_info_result.video_codec, stream_info_result.audio_codec);
         } else if (video_compatible && !audio_compatible) {
             // 视频兼容但音频不兼容（如 H.264 + MP3），只转码音频
             use_ffmpeg = true;
             video_only_transcode = true;
+            transcoding_reason = "Audio Incompatible (" + stream_info_result.audio_codec + ")";
             LOG_INFO("[SmartStreamProcessor] Video({}) is compatible but audio({}) is not, transcoding audio only", 
                     stream_info_result.video_codec, stream_info_result.audio_codec);
         } else {
             // 视频不兼容（如 H.265），需要全转码
             use_ffmpeg = true;
             video_only_transcode = false;
+            transcoding_reason = "Video Incompatible (" + stream_info_result.video_codec + ")";
             LOG_INFO("[SmartStreamProcessor] Video({}) is not compatible, transcoding video and audio", 
                     stream_info_result.video_codec.empty() ? "(unknown)" : stream_info_result.video_codec);
         }
@@ -426,6 +464,7 @@ void SmartStreamProcessor::MakeTranscodingDecision(const StreamInfoResult& strea
         // 即使流信息检测失败，也尝试直接代理，因为 ZLM 可能能够处理
         // 如果直接代理失败（如 ZLM_API_FAILED 或 Timeout），ProcessStream 会处理回退到 FFmpeg
         use_ffmpeg = false;
+        transcoding_reason = "Detection Failed, Trying Direct Proxy";
         LOG_WARN("[SmartStreamProcessor] Stream info detection failed for {} stream, will try direct proxy first. If it fails, will fallback to FFmpeg transcoding", protocol);
     }
 }

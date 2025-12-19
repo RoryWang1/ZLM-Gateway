@@ -51,25 +51,25 @@ export default function HLSPlayer({
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,  // 禁用低延迟模式（可能导致缓冲区不足）
-        // 优化配置 - 增加缓冲区，提高稳定性
-        maxBufferLength: 30.0,  // 增加到30秒，确保有足够的缓冲区
-        maxMaxBufferLength: 60.0,  // 增加到60秒最大缓冲
-        maxBufferSize: 30 * 1000 * 1000,  // 增加到30MB缓冲区
-        maxBufferHole: 0.5,  // 允许0.5秒的缓冲区间隙
-        highBufferWatchdogPeriod: 2.0,  // 监控周期2.0秒
-        nudgeOffset: 0.1,  // 调整偏移量
-        nudgeMaxRetry: 5,  // 最大重试次数增加到5
-        fragLoadingTimeOut: 20000,  // 片段加载超时20秒
-        manifestLoadingTimeOut: 10000,  // 清单加载超时10秒
+        // 优化配置 - 减少缓冲区，提高实时性
+        maxBufferLength: 2.0,  // 降低到2秒，确保低延迟
+        maxMaxBufferLength: 4.0,  // 降低到4秒最大缓冲
+        maxBufferSize: 30 * 1000 * 1000,
+        maxBufferHole: 0.1,  // 减少缓冲区间隙容忍度
+        highBufferWatchdogPeriod: 2.0,
+        nudgeOffset: 0.1,
+        nudgeMaxRetry: 5,
+        fragLoadingTimeOut: 20000,
+        manifestLoadingTimeOut: 10000,
         // 优化的清理配置
-        maxStarvationDelay: 5.0,  // 增加到5.0秒，提高稳定性
-        maxLoadingDelay: 5.0,  // 增加到5.0秒，提高稳定性
-        // 优化的实时模式
-        liveSyncDurationCount: 3,  // 保持3个片段用于同步
-        liveMaxLatencyDurationCount: 10,  // 增加到10，提高稳定性（保留10个片段）
+        maxStarvationDelay: 2.0,  // 降低到2.0秒
+        maxLoadingDelay: 2.0,  // 降低到2.0秒
+        // 优化的实时模式 (LL-HLS like)
+        liveSyncDurationCount: 2,  // 保持2个片段同步
+        liveMaxLatencyDurationCount: 4,  // 最大延迟4个片段
         // 低延迟优化
-        liveDurationInfinity: false,  // 不使用无限持续时间
-        liveBackBufferLength: 0,  // 不保留回放缓冲区
+        liveDurationInfinity: false,
+        liveBackBufferLength: 0,
         // 添加启动配置
         startFragPrefetch: true,  // 预取起始片段
         testBandwidth: true,  // 测试带宽

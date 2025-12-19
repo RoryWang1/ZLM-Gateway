@@ -39,6 +39,13 @@ struct Config {
         struct StreamDetectionConfig {
             int timeout_seconds = 10;              // 检测超时（秒）
         } stream_detection;
+
+        // 【新增】WebRTC 兼容性配置（统一策略）
+        struct WebRTCCompatibilityConfig {
+             std::vector<std::string> allowed_profiles;      // 允许的 H.264 profile (如 "Baseline", "Constrained Baseline")
+             std::vector<std::string> allowed_pixel_formats; // 允许的像素格式 (如 "yuv420p")
+             std::vector<std::string> allowed_audio_codecs;  // 允许的音频编码 (如 "aac", "opus", "pcma", "pcmu")
+        } webrtc_compat;
     } gateway;
 
     // ZLMediaKit 配置

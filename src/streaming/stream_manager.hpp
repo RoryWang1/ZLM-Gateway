@@ -46,7 +46,7 @@ struct StreamMetadata {
     std::string source_url;             // 源流地址
     std::string device_id;              // 设备 ID（如果是设备发现协议）
     std::string device_type;            // 设备类型: "onvif", "isapi", "dahua", etc.
-    StreamStatus status;                // 流状态
+    StreamStatus status = StreamStatus::Stopped;                // 流状态
     int64_t create_time;                // 创建时间（Unix 时间戳，秒）
     int64_t last_update_time;           // 最后更新时间（Unix 时间戳，秒）
     int pid = 0;                        // 进程 ID（如果是 FFmpeg 进程）
@@ -59,7 +59,10 @@ struct StreamMetadata {
     int64_t bytes_speed = 0;            // 字节速度
     int64_t total_bytes = 0;            // 总字节数
     std::string zlm_app;                // ZLM中实际注册的app名称（可能不同于metadata.app）
+
     std::string zlm_stream;             // ZLM中实际注册的stream名称（可能包含时间戳，不同于metadata.stream）
+    std::string transcoding_reason;     // 转码原因（如 "H.264 Profile Incompatible", "Audio Codec MP3"）
+
 
     // 错误信息（用于错误模型统一）
     std::string error_code;             // 错误码（如 "SOURCE_NOT_FOUND", "CODEC_UNSUPPORTED"）

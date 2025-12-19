@@ -37,6 +37,7 @@ else
     # 尝试在常见位置查找
     for path in \
         "$PROJECT_ROOT/third_party/zlmediakit/release/darwin/Release/MediaServer" \
+        "$PROJECT_ROOT/third_party/zlmediakit_backup/release/darwin/Release/MediaServer" \
         "$PROJECT_ROOT/third_party/zlmediakit/release/mac/Release/MediaServer" \
         "/usr/local/MediaServer" \
         "/opt/MediaServer" \

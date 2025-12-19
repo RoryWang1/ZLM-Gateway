@@ -3,7 +3,13 @@
 
 #include "process/ffprobe_detector.hpp"
 #include <string>
+#include <string>
 #include <memory>
+#include <vector>
+#include <algorithm>
+// Forward declaration to avoid full include if possible, but struct is nested.
+// Use full include for simplicity as it's a utility class.
+#include "config/config_loader.hpp"
 
 namespace gateway {
 namespace utils {
@@ -27,7 +33,11 @@ struct StreamInfoResult {
     int video_width = 0;                     // 视频宽度
     int video_height = 0;                    // 视频高度
     double video_fps = 0.0;                  // 视频帧率
+
     int video_bitrate = 0;                  // 视频码率（bps）
+    std::string video_profile;               // 视频 Profile (Baseline, Main, High)
+    std::string video_level;                 // 视频 Level (3.1, 4.0, etc.)
+    std::string pixel_format;                // 像素格式 (yuv420p, etc.)
     
     // 流信息
     std::string format_name;                 // 容器格式（如 "flv", "rtsp"）
@@ -101,6 +111,20 @@ public:
      * @return 是否可以使用 -c:v copy -c:a aac
      */
     static bool CanUseVideoCopy(const StreamInfoResult& result);
+
+    /**
+     * @brief [核心] 检查流是否完全兼容 WebRTC（基于配置策略）
+     * 
+     * 这是一个"一锤定音"的函数，结合了 Profile、PixelFormat、AudioCodec 的检查。
+     * 
+     * @param info 流信息
+     * @param config WebRTC 兼容性配置
+     * @param reason [输出]如果不兼容，写入具体原因（用于前端展示和日志）
+     * @return true=兼容(Direct Proxy), false=不兼容(Transcode)
+     */
+    static bool IsWebRTCCompatible(const StreamInfoResult& info, 
+                                   const config::Config::GatewayConfig::WebRTCCompatibilityConfig& config,
+                                   std::string& reason);
     
 private:
     std::unique_ptr<process::FFprobeDetector> detector_;

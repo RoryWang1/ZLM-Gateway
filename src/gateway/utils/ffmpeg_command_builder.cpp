@@ -58,7 +58,10 @@ void FFmpegCommandBuilder::BuildDeviceInput(std::ostringstream& oss, const FFmpe
     if (options.input_width > 0 && options.input_height > 0) {
         oss << " -video_size " << options.input_width << "x" << options.input_height;
     }
-    oss << " -framerate " << input_fps;
+    oss << " -framerate " << input_fps
+        << " -fflags nobuffer -flags low_delay"  // 关键：禁用输入缓冲
+        << " -probesize 32"  // 极小探测包大小
+        << " -analyzeduration 0";  // 禁用探测时长
     
     // 音频输入处理
     std::string audio_input = ":default";
@@ -115,52 +118,50 @@ void FFmpegCommandBuilder::BuildEncoding(std::ostringstream& oss, const FFmpegCo
 }
 
 void FFmpegCommandBuilder::BuildWebRTCEncoding(std::ostringstream& oss, const FFmpegCommandOptions& options) const {
-    // WebRTC 模式：必须转码为 H.264 (High profile, zero latency) + AAC (最终转Opus)
-    // 且必须确保分辨率和像素格式正确
+    // WebRTC 模式：
+    // 1. 视频策略：
+    //    - 如果源视频是 H.264，则尝试 Copy (Video Pass-through)，实现 0 毫秒延迟。
+    //    - 否则，转码为 H.264 (使用 zerolatency 参数).
+    // 2. 音频策略：
+    //    - 始终转码为 AAC (44.1k/48k)，以解决 "Audio Issue" (如 G.711/PCM 在 WebRTC 不兼容问题).
+    //    - ZLMediaKit 会负责将 AAC 重新封装/转码为 WebRTC 需要的 Opus。
     
-    // 码率选择
+    // 检查视频兼容性 (H.264)
+    bool video_compatible = (options.stream_info.video_codec == "h264");
+    
+    // 码率选择 (如果是转码才需要)
     const auto& webrtc_cfg = config_->local_camera.webrtc;
     int bitrate = (options.target_bitrate_kbps > 0) ? options.target_bitrate_kbps : 
                  (webrtc_cfg.bitrate.empty() ? 2500 : std::stoi(webrtc_cfg.bitrate));
 
-    // 分辨率选择
-    int target_width, target_height;
-    bool use_native_resolution = false;
-    
-    int src_width = options.stream_info.video_width > 0 ? options.stream_info.video_width : options.input_width;
-    int src_height = options.stream_info.video_height > 0 ? options.stream_info.video_height : options.input_height;
-
-    if (src_width > 0 && src_height > 0 && options.use_native_resolution) {
-        target_width = src_width;
-        target_height = src_height;
-        use_native_resolution = true;
+    if (video_compatible) {
+        LOG_INFO("[FFmpegCommandBuilder] WebRTC: Source is H.264, using Video Copy for lowest latency.");
+        // 视频 Copy
+        oss << " -c:v copy";
     } else {
+        LOG_INFO("[FFmpegCommandBuilder] WebRTC: Source is not H.264 ({}), transcoding required.", options.stream_info.video_codec);
+        
+        // 分辨率选择
+        int src_width = options.stream_info.video_width > 0 ? options.stream_info.video_width : options.input_width;
+        int src_height = options.stream_info.video_height > 0 ? options.stream_info.video_height : options.input_height;
+        
+        int target_width, target_height;
         std::string config_res = webrtc_cfg.resolution.empty() ? "1920x1080" : webrtc_cfg.resolution;
         auto res = SelectResolution(config_res, src_width, src_height);
         target_width = res.first;
         target_height = res.second;
+
+
+
+        // 使用公共辅助类生成核心编码参数 (Force zerolatency inside)
+        ::utils::FFmpegParams::AddWebRTCEncodingParams(oss, bitrate, true, src_width, src_height);
+
+        // 显式指定输出分辨率
+        oss << " -s " << target_width << "x" << target_height;
     }
 
-    // 像素格式 (设备输入通常需要 nv12，网络流通常已经是 yuv420p 但统一 nv12 更安全)
-    if (options.input_format == "avfoundation") {
-        oss << " -pix_fmt nv12";
-    }
-
-    // 使用公共辅助类生成核心编码参数
-    // 传递source的宽高，让AddWebRTCEncodingParams决定是否添加scale
-    ::utils::FFmpegParams::AddWebRTCEncodingParams(oss, bitrate, true, src_width, src_height);
-
-    // 显式指定输出分辨率（使用-s参数，不使用-vf避免冲突）
-    oss << " -s " << target_width << "x" << target_height;
-
-    // 音频处理：如果是 AAC 且为网络流，尝试 Copy？
-    // WebRTC 比较特殊，建议统一转码以保证兼容性，除非非常确定源完全兼容
-    // 目前策略：简单点，如果是网络流且是 AAC，尝试 Copy；否则转码
-    if (options.input_format != "avfoundation" && options.input_format != "v4l2" && options.stream_info.audio_codec == "aac") {
-         LOG_DEBUG("[FFmpegCommandBuilder] WebRTC: Source is AAC, logic suggests copy but params enforced transcoding. Keeping transcoding for stability.");
-         // 注意：AddWebRTCEncodingParams 已经加了 -c:a aac。如果想 Copy 需要覆盖。
-         // 鉴于 WebRTC 对音频参数敏感，这里维持转码
-    }
+    // 音频处理：始终转码以保证兼容性
+    oss << " -c:a aac -b:a 128k -ar 48000 -ac 2";
 }
 
 void FFmpegCommandBuilder::BuildStreamingEncoding(std::ostringstream& oss, const FFmpegCommandOptions& options) const {
