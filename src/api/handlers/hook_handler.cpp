@@ -141,7 +141,9 @@ void HookHandler::HandleStreamNoneReader(const httplib::Request& req, httplib::R
         RecordStats("stream_none_reader", elapsed, true, false, false);
 
         res.status = 200;
-        res.set_content(R"({"code": 0, "msg": "OK"})", "application/json");
+        // Critical Fix: Explicitly tell ZLM NOT to close the stream (close: false)
+        // This prevents the "Auto-Stop" issue where streams die after 60s of inactivity.
+        res.set_content(R"({"code": 0, "close": false, "msg": "Keep alive for gateway"})", "application/json");
     } catch (const std::exception& e) {
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start_time).count();

@@ -68,6 +68,14 @@ std::shared_ptr<gateway::GatewayBase> StreamHandler::SelectGateway(const std::st
         return it->second;
     }
     
+    // Alias fix for local-camera / local_camera mismatch configuration
+    if (protocol == "local-camera") {
+        auto it2 = gateways_.find("local_camera");
+        if (it2 != gateways_.end()) {
+            return it2->second;
+        }
+    }
+    
     LOG_ERROR("SelectGateway: Unsupported protocol or Gateway not enabled: {}", protocol);
     return nullptr;
 }

@@ -154,9 +154,31 @@ static bool IsInList(const std::vector<std::string>& list, const std::string& va
     return false;
 }
 
-bool StreamInfoDetector::IsWebRTCCompatible(const StreamInfoResult& info, 
-                                            const config::Config::GatewayConfig::WebRTCCompatibilityConfig& config,
-                                            std::string& reason) {
+bool StreamInfoDetector::IsVideoWebSafe(const StreamInfoResult& info, std::string& reason) {
+    // 1. Check Codec (Must be H.264)
+    if (info.video_codec != "h264") {
+        reason = "Video codec is not H.264 (Current: " + info.video_codec + ")";
+        return false;
+    }
+
+    // 2. Check Pixel Format (Critical for Web: must be yuv420p)
+    // flv.js and most browsers do not support yuv422p or yuvj420p well in FLV container
+    if (info.pixel_format != "yuv420p" && info.pixel_format != "yuvj420p") {
+         // Allow yuvj420p as it is mostly compatible, but yuv422p/444p is definitely not
+         if (info.pixel_format == "yuv422p" || info.pixel_format == "yuv444p" || info.pixel_format == "uyvy422") {
+             reason = "Incompatible Pixel Format for Web: " + info.pixel_format + " (Required: yuv420p)";
+             return false;
+         }
+         // For other formats, we might warn but proceed, or be strict. Let's be semi-strict.
+    }
+
+    reason = "Compatible (H.264 + Safe Pixel Format)";
+    return true;
+}
+
+bool StreamInfoDetector::IsVideoWebRTCCompatible(const StreamInfoResult& info, 
+                                               const config::Config::GatewayConfig::WebRTCCompatibilityConfig& config,
+                                               std::string& reason) {
     if (!info.valid) {
         reason = "Stream Info Invalid";
         return false;
@@ -200,7 +222,19 @@ bool StreamInfoDetector::IsWebRTCCompatible(const StreamInfoResult& info,
         }
     }
 
-    // 4. 检查音频编码
+    reason = "Video Compatible";
+    return true;
+}
+
+bool StreamInfoDetector::IsWebRTCCompatible(const StreamInfoResult& info, 
+                                            const config::Config::GatewayConfig::WebRTCCompatibilityConfig& config,
+                                            std::string& reason) {
+    // 1. 检查视频兼容性
+    if (!IsVideoWebRTCCompatible(info, config, reason)) {
+        return false;
+    }
+
+    // 2. 检查音频编码
     // 注意：WebRTC 实际上非常挑剔。如果不是 Opus/PCMA/PCMU，通常都需要转码。
     // AAC 在某些浏览器支持，但在 WebRTC 容器中并不总是有效。
     // 如果没有音频流，则不用转码音频

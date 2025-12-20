@@ -97,6 +97,9 @@ public:
      * @return 是否兼容
      */
     static bool IsAudioCodecCompatible(const std::string& audio_codec);
+
+    // New helper for FLV/HLS Web compatibility (H.264 + yuv420p, but allows High/Main profile)
+    static bool IsVideoWebSafe(const StreamInfoResult& result, std::string& reason);
     
     /**
      * @brief 检查是否可以完全使用 copy（视频和音频都兼容）
@@ -125,6 +128,15 @@ public:
     static bool IsWebRTCCompatible(const StreamInfoResult& info, 
                                    const config::Config::GatewayConfig::WebRTCCompatibilityConfig& config,
                                    std::string& reason);
+                                   
+    /**
+     * @brief [核心] 检查视频流是否兼容 WebRTC
+     * 
+     * 仅检查视频相关的参数（编码、Profile、Pixel Format）
+     */
+    static bool IsVideoWebRTCCompatible(const StreamInfoResult& info, 
+                                        const config::Config::GatewayConfig::WebRTCCompatibilityConfig& config,
+                                        std::string& reason);
     
 private:
     std::unique_ptr<process::FFprobeDetector> detector_;
