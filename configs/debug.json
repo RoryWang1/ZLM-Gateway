@@ -1,0 +1,21 @@
+{
+    "gateway": {
+        "http_port": 8080,
+        "ws_port": 8092,
+        "log_level": "debug",
+        "log_file": "stdout",
+        "total_bandwidth_mbps": 100
+    },
+    "zlmediakit": {
+        "api_url": "http://127.0.0.1:8081",
+        "secret": "UQyXemwV81qnNkuXQSp2eo5txJM35PZr",
+        "rtmp_port": 1935,
+        "rtsp_port": 8554,
+        "http_port": 8081
+    },
+    "gateways": {
+        "quic": {
+            "enabled": true
+        }
+    }
+}

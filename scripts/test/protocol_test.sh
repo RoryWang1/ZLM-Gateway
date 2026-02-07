@@ -46,10 +46,30 @@ fi
 
 # 获取FFmpeg路径
 get_ffmpeg_path() {
+    # 1. 优先从配置文件读取 config.json -> rtsp.ffmpeg_path
+    if [ -f "$PROJECT_ROOT/configs/config.json" ]; then
+        local config_path=$(python3 -c "import json; f=open('$PROJECT_ROOT/configs/config.json'); d=json.load(f); print(d.get('rtsp', {}).get('ffmpeg_path', ''))" 2>/dev/null)
+        if [ -n "$config_path" ]; then
+            # 如果配置的是 "ffmpeg" 且在 PATH 中
+            if [ "$config_path" = "ffmpeg" ] && command -v ffmpeg &> /dev/null; then
+                command -v ffmpeg
+                return
+            elif [ -f "$PROJECT_ROOT/$config_path" ]; then
+                echo "$PROJECT_ROOT/$config_path"
+                return
+            elif [ -f "$config_path" ]; then
+                echo "$config_path"
+                return
+            fi
+        fi
+    fi
+
+    # 2. 检查本地二进制路径 (Local Bundle)
     if [ -f "$PROJECT_ROOT/third_party/ffmpeg/macos-arm64/ffmpeg" ]; then
         echo "$PROJECT_ROOT/third_party/ffmpeg/macos-arm64/ffmpeg"
     elif [ -f "$PROJECT_ROOT/third_party/ffmpeg/linux-x64/ffmpeg" ]; then
         echo "$PROJECT_ROOT/third_party/ffmpeg/linux-x64/ffmpeg"
+    # 3. 检查系统命令 (System) - 适用于 Linux ARM64
     elif command -v ffmpeg &> /dev/null; then
         command -v ffmpeg
     else

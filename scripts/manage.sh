@@ -9,6 +9,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# 清除代理设置，防止 localhost 连接问题 (重要!)
+unset http_proxy
+unset https_proxy
+unset HTTP_PROXY
+unset HTTPS_PROXY
+
 # 默认配置
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 
@@ -43,6 +49,10 @@ usage() {
   start                启动所有服务 (ZLM, Gateway, 前端)
   stop                 停止所有服务
   status               查看服务状态
+  setup                安装项目依赖 (apt/brew)
+  check                检查环境依赖和配置
+  build                编译 Gateway 主程序
+  build_zlm            下载并编译 ZLMediaKit
 
 选项:
   --clean-streams      停止服务时，同时清理正在运行的流（仅用于stop命令）
@@ -52,6 +62,10 @@ usage() {
   $0 stop               # 停止所有服务
   $0 stop --clean-streams  # 停止所有服务并清理流
   $0 status             # 查看服务状态
+  $0 setup              # 安装依赖
+  $0 check              # 检查环境
+  $0 build_zlm          # 编译 ZLMediaKit
+  $0 build              # 编译 Gateway
 
 EOF
     exit 1
@@ -59,21 +73,21 @@ EOF
 
 # 检查服务是否运行
 check_zlm() {
-    if curl -s "${ZLM_URL}/index/api/getServerConfig" > /dev/null 2>&1; then
+    if curl --noproxy "*" -s "${ZLM_URL}/index/api/getServerConfig" > /dev/null 2>&1; then
         return 0
     fi
     return 1
 }
 
 check_gateway() {
-    if curl -s "${GATEWAY_URL}/health" > /dev/null 2>&1; then
+    if curl --noproxy "*" -s "${GATEWAY_URL}/health" > /dev/null 2>&1; then
         return 0
     fi
     return 1
 }
 
 check_frontend() {
-    if curl -s "http://localhost:${FRONTEND_PORT}" > /dev/null 2>&1; then
+    if curl --noproxy "*" -s "http://localhost:${FRONTEND_PORT}" > /dev/null 2>&1; then
         return 0
     fi
     return 1
@@ -135,6 +149,8 @@ start_gateway() {
     echo -e "${BLUE}=========================================="
     echo "启动 Gateway Manager"
     echo -e "==========================================${NC}"
+    
+    mkdir -p logs
     
     if check_gateway; then
         echo -e "${GREEN}✓ Gateway Manager 已在运行${NC}"
@@ -544,6 +560,23 @@ main() {
         
         status)
             show_status
+            ;;
+        
+        setup)
+            bash "$SCRIPT_DIR/setup/install_deps.sh"
+            ;;
+        
+        check)
+            bash "$SCRIPT_DIR/setup/verify_env.sh"
+            ;;
+
+        build)
+            echo "Building Gateway..."
+            make
+            ;;
+
+        build_zlm)
+            bash "$SCRIPT_DIR/setup/setup_zlmediakit.sh"
             ;;
         
         *)

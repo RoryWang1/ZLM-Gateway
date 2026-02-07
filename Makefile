@@ -26,25 +26,39 @@ ifeq ($(UNAME_S),Darwin)
     else
         FFMPEG_PLATFORM = macos-x86_64
     endif
+
 else
-    ifeq ($(UNAME_M),x86_64)
-        FFMPEG_PLATFORM = linux-x86_64
-    else ifeq ($(UNAME_M),aarch64)
-        FFMPEG_PLATFORM = linux-arm64
-    else
-        FFMPEG_PLATFORM = linux-x86_64
-    endif
+    # Linux (Generic)
+    FFMPEG_PLATFORM = linux
+    # Linux 推荐完全使用系统依赖
+    USE_SYSTEM_DEPS = 1
+endif
+
+# 如果设置了 USE_SYSTEM_DEPS，打印提示
+ifeq ($(USE_SYSTEM_DEPS),1)
+    $(info 构建模式: 强制使用系统依赖 (USE_SYSTEM_DEPS=1))
 endif
 
 FFMPEG_BIN_DIR = $(THIRD_PARTY_DIR)/ffmpeg/$(FFMPEG_PLATFORM)
-FFMPEG_BINARY = $(FFMPEG_BIN_DIR)/ffmpeg
-FFPROBE_BINARY = $(FFMPEG_BIN_DIR)/ffprobe
+
+ifeq ($(USE_SYSTEM_DEPS),1)
+    # 系统依赖模式：直接使用系统命令
+    FFMPEG_BINARY = ffmpeg
+    FFPROBE_BINARY = ffprobe
+else
+    # 混合模式：优先使用项目内二进制
+    FFMPEG_BINARY = $(FFMPEG_BIN_DIR)/ffmpeg
+    FFPROBE_BINARY = $(FFMPEG_BIN_DIR)/ffprobe
+endif
 
 # CURL 库路径（项目内）
 CURL_DIR = $(THIRD_PARTY_DIR)/curl
 CURL_PLATFORM_DIR = $(CURL_DIR)/$(FFMPEG_PLATFORM)
-CURL_LIB_DIR = $(CURL_PLATFORM_DIR)/lib
-CURL_INCLUDE_DIR = $(CURL_PLATFORM_DIR)/include
+
+ifneq ($(USE_SYSTEM_DEPS),1)
+    CURL_LIB_DIR = $(CURL_PLATFORM_DIR)/lib
+    CURL_INCLUDE_DIR = $(CURL_PLATFORM_DIR)/include
+endif
 
 # msquic 库路径（QUIC 实现）
 MSQUIC_DIR = $(THIRD_PARTY_DIR)/msquic
@@ -59,15 +73,24 @@ MSQUIC_AVAILABLE = $(shell test -f $(MSQUIC_LIB) && echo "yes" || echo "no")
 OPENSSL_PREFIX = $(shell brew --prefix openssl@3 2>/dev/null || brew --prefix openssl 2>/dev/null || echo "")
 
 # 包含目录
-INCLUDES = -I$(INCLUDE_DIR) \
-           -I$(SRC_DIR) \
-           -I$(THIRD_PARTY_DIR) \
-           -I$(THIRD_PARTY_DIR)/httplib \
-           -I$(THIRD_PARTY_DIR)/json/include \
-           -I$(THIRD_PARTY_DIR)/spdlog/include \
-           -I$(THIRD_PARTY_DIR)/websocketpp \
-           -I$(THIRD_PARTY_DIR)/asio/asio/include \
-           -I$(CURL_INCLUDE_DIR)
+# 包含目录
+ifeq ($(USE_SYSTEM_DEPS),1)
+    # 系统依赖模式：不包含 third_party 下的 json/spdlog/etc，使用系统路径
+    INCLUDES = -I$(INCLUDE_DIR) \
+               -I$(SRC_DIR) \
+               -I$(THIRD_PARTY_DIR) \
+               -I$(CURL_INCLUDE_DIR)
+else
+    INCLUDES = -I$(INCLUDE_DIR) \
+               -I$(SRC_DIR) \
+               -I$(THIRD_PARTY_DIR) \
+               -I$(THIRD_PARTY_DIR)/httplib \
+               -I$(THIRD_PARTY_DIR)/json/include \
+               -I$(THIRD_PARTY_DIR)/spdlog/include \
+               -I$(THIRD_PARTY_DIR)/websocketpp \
+               -I$(THIRD_PARTY_DIR)/asio/asio/include \
+               -I$(CURL_INCLUDE_DIR)
+endif
 
 # 如果 OpenSSL 可用，添加包含目录
 ifneq ($(OPENSSL_PREFIX),)
@@ -86,8 +109,12 @@ endif
 
 # 库目录
 LIB_DIRS = -L/usr/local/lib \
-           -L$(THIRD_PARTY_DIR)/zlmediakit/lib \
-           -L$(CURL_LIB_DIR)
+           -L$(THIRD_PARTY_DIR)/zlmediakit/lib
+
+# 非系统依赖模式下才添加本地 CURL lib 路径
+ifneq ($(USE_SYSTEM_DEPS),1)
+    LIB_DIRS += -L$(CURL_LIB_DIR)
+endif
 
 # 如果 msquic 可用，添加库目录
 ifneq ($(MSQUIC_AVAILABLE),no)
@@ -101,49 +128,49 @@ PKG_CONFIG = pkg-config
 FFMPEG_CFLAGS = $(shell $(PKG_CONFIG) --cflags libavformat libavcodec libavutil libavfilter libswscale 2>/dev/null || echo "")
 FFMPEG_LIBS = $(shell $(PKG_CONFIG) --libs libavformat libavcodec libavutil libavfilter libswscale 2>/dev/null || echo "")
 
-# libcurl
-# 优先使用项目内的 CURL（如果存在），否则使用系统 CURL
-# 优先查找静态库，然后是动态库，最后是 .tbd 文件（macOS 文本格式库定义）
-CURL_STATIC_LIB = $(shell find $(CURL_LIB_DIR) -name "libcurl.a" 2>/dev/null | head -1)
-CURL_DYNAMIC_LIB = $(shell find $(CURL_LIB_DIR) -name "libcurl*.dylib" -o -name "libcurl*.so" 2>/dev/null | head -1)
-CURL_TBD_LIB = $(shell find $(CURL_LIB_DIR) -name "libcurl*.tbd" 2>/dev/null | head -1)
-CURL_LIB_FILE = $(if $(CURL_STATIC_LIB),$(CURL_STATIC_LIB),$(if $(CURL_DYNAMIC_LIB),$(CURL_DYNAMIC_LIB),$(CURL_TBD_LIB)))
-
-ifneq ($(CURL_LIB_FILE),)
-    # 使用项目内的 CURL
-    CURL_CFLAGS = -I$(CURL_INCLUDE_DIR)
-    ifneq ($(CURL_STATIC_LIB),)
-        # 使用静态库
-        CURL_LIBS = $(CURL_STATIC_LIB)
-        $(info 使用项目内 CURL 静态库: $(CURL_STATIC_LIB))
-    else ifneq ($(CURL_DYNAMIC_LIB),)
-        # 使用动态库
-        CURL_LIBS = -L$(CURL_LIB_DIR) -lcurl
-        $(info 使用项目内 CURL 动态库: $(CURL_DYNAMIC_LIB))
-    else ifneq ($(CURL_TBD_LIB),)
-        # 使用 .tbd 文件（macOS 文本格式库定义，链接时使用系统库）
-        CURL_LIBS = -L$(CURL_LIB_DIR) -lcurl
-        $(info 使用项目内 CURL .tbd 文件: $(CURL_TBD_LIB))
-    endif
-else
-    # 回退到系统 CURL
+# libcurl Logic
+ifeq ($(USE_SYSTEM_DEPS),1)
+    # 强制使用系统 CURL
     CURL_CFLAGS = $(shell $(PKG_CONFIG) --cflags libcurl 2>/dev/null || echo "")
     CURL_LIBS = $(shell $(PKG_CONFIG) --libs libcurl 2>/dev/null || echo "-lcurl")
-    $(info 使用系统 CURL (项目内 CURL 不存在: $(CURL_LIB_DIR)))
+    $(info 使用系统 CURL (USE_SYSTEM_DEPS=1))
+else
+    # 原有逻辑：优先检查本地，回退系统
+    # 优先使用项目内的 CURL（如果存在），否则使用系统 CURL
+    # ... (原有查找逻辑) ...
+    CURL_STATIC_LIB = $(shell find $(CURL_LIB_DIR) -name "libcurl.a" 2>/dev/null | head -1)
+    CURL_DYNAMIC_LIB = $(shell find $(CURL_LIB_DIR) -name "libcurl*.dylib" -o -name "libcurl*.so" 2>/dev/null | head -1)
+    CURL_TBD_LIB = $(shell find $(CURL_LIB_DIR) -name "libcurl*.tbd" 2>/dev/null | head -1)
+    CURL_LIB_FILE = $(if $(CURL_STATIC_LIB),$(CURL_STATIC_LIB),$(if $(CURL_DYNAMIC_LIB),$(CURL_DYNAMIC_LIB),$(CURL_TBD_LIB)))
+
+    ifneq ($(CURL_LIB_FILE),)
+        # 使用项目内的 CURL
+        CURL_CFLAGS = -I$(CURL_INCLUDE_DIR)
+        ifneq ($(CURL_STATIC_LIB),)
+            # 使用静态库
+            CURL_LIBS = $(CURL_STATIC_LIB)
+            $(info 使用项目内 CURL 静态库: $(CURL_STATIC_LIB))
+        else ifneq ($(CURL_DYNAMIC_LIB),)
+            # 使用动态库
+            CURL_LIBS = -L$(CURL_LIB_DIR) -lcurl
+            $(info 使用项目内 CURL 动态库: $(CURL_DYNAMIC_LIB))
+        else ifneq ($(CURL_TBD_LIB),)
+            # 使用 .tbd 文件
+            CURL_LIBS = -L$(CURL_LIB_DIR) -lcurl
+            $(info 使用项目内 CURL .tbd 文件: $(CURL_TBD_LIB))
+        endif
+    else
+        # 回退到系统 CURL
+        CURL_CFLAGS = $(shell $(PKG_CONFIG) --cflags libcurl 2>/dev/null || echo "")
+        CURL_LIBS = $(shell $(PKG_CONFIG) --libs libcurl 2>/dev/null || echo "-lcurl")
+        $(info 使用系统 CURL (项目内 CURL 不存在: $(CURL_LIB_DIR)))
+    endif
 endif
 
-# GStreamer (可选)
-GSTREAMER_CFLAGS = $(shell $(PKG_CONFIG) --cflags gstreamer-1.0 gstreamer-app-1.0 2>/dev/null || echo "")
-GSTREAMER_LIBS = $(shell $(PKG_CONFIG) --libs gstreamer-1.0 gstreamer-app-1.0 2>/dev/null || echo "")
 
-# 检查GStreamer是否可用
-ifneq ($(GSTREAMER_CFLAGS),)
-    CXXFLAGS += -DHAVE_GSTREAMER
-    INCLUDES += $(GSTREAMER_CFLAGS)
-endif
 
 # 编译选项
-CXXFLAGS += $(INCLUDES) $(FFMPEG_CFLAGS) $(CURL_CFLAGS)
+CXXFLAGS += $(INCLUDES) $(FFMPEG_CFLAGS) $(CURL_CFLAGS) -DCPPHTTPLIB_OPENSSL_SUPPORT
 
 # 链接库
 # CURL 静态库需要额外的依赖库
@@ -182,16 +209,12 @@ endif
 MSQUIC_LIBS = 
 ifneq ($(MSQUIC_AVAILABLE),no)
     MSQUIC_LIBS = $(MSQUIC_LIB)
-    # msquic 使用 OpenSSL（如果 CURL 使用 OpenSSL，可能已经链接）
-    # 确保 OpenSSL 已链接（msquic 需要）
-    ifeq ($(CURL_USES_OPENSSL),no)
-        # 如果 CURL 不使用 OpenSSL，需要单独链接 OpenSSL（msquic 需要）
-        ifneq ($(OPENSSL_PREFIX),)
-            MSQUIC_LIBS += -L$(OPENSSL_PREFIX)/lib -lssl -lcrypto
-        else
-            MSQUIC_LIBS += -lssl -lcrypto
-        endif
-    endif
+    
+    
+    # 在系统依赖模式下，msquic 使用 bundled quictls (静态)
+    MSQUIC_QUICTLS_LIB = $(MSQUIC_BUILD_DIR)/_deps/opensslquic-build/quictls/lib
+    MSQUIC_LIBS += $(MSQUIC_QUICTLS_LIB)/libssl.a $(MSQUIC_QUICTLS_LIB)/libcrypto.a
+    
     # msquic 需要额外的系统库（macOS）
     ifeq ($(UNAME_S),Darwin)
         MSQUIC_LIBS += -framework CoreFoundation -framework Security
@@ -201,8 +224,9 @@ endif
 LIBS = $(FFMPEG_LIBS) \
        $(CURL_LIBS) \
        $(if $(CURL_STATIC_LIB),$(CURL_EXTRA_LIBS),) \
-       $(GSTREAMER_LIBS) \
        $(MSQUIC_LIBS) \
+       -lssl -lcrypto \
+       -lz -lfmt -lcpp-httplib \
        -lpthread \
        -ldl
 
@@ -255,7 +279,6 @@ GATEWAY_ISAPI_SRC = $(SRC_DIR)/gateway/isapi/isapi_gateway.cpp
 GATEWAY_DAHUA_SRC = $(SRC_DIR)/gateway/dahua/dahua_gateway.cpp
 GATEWAY_PSIA_SRC = $(SRC_DIR)/gateway/psia/psia_gateway.cpp
 GATEWAY_LOCAL_CAMERA_SRC = $(SRC_DIR)/gateway/local_camera/local_camera_gateway.cpp \
-                           $(SRC_DIR)/gateway/local_camera/ffmpeg_command_builder.cpp \
                            $(SRC_DIR)/gateway/local_camera/device_manager.cpp \
                            $(SRC_DIR)/gateway/local_camera/device_resolver.cpp \
                            $(SRC_DIR)/gateway/local_camera/stream_validator.cpp \
@@ -471,13 +494,12 @@ deps-ubuntu:
 		libavfilter-dev \
 		libswscale-dev \
 		libcurl4-openssl-dev \
-		libgstreamer1.0-dev \
-		libgstreamer-plugins-base1.0-dev
+
 
 # 安装依赖（macOS）
 deps-macos:
 	@echo "Installing dependencies for macOS..."
-	brew install cmake pkg-config ffmpeg curl gstreamer gst-plugins-base
+	brew install cmake pkg-config ffmpeg curl
 
 # 检查依赖
 check-deps:
@@ -485,22 +507,41 @@ check-deps:
 	@echo -n "FFmpeg开发库: "
 	@$(PKG_CONFIG) --exists libavformat && echo "OK" || echo "NOT FOUND"
 	@echo -n "FFmpeg二进制: "
-	@test -f $(FFMPEG_BINARY) && echo "OK ($(FFMPEG_BINARY))" || echo "NOT FOUND ($(FFMPEG_BINARY))"
+	@if [ -f "$(FFMPEG_BINARY)" ]; then \
+		echo "OK ($(FFMPEG_BINARY))"; \
+	elif command -v ffmpeg >/dev/null 2>&1; then \
+		echo "OK (system: $$(command -v ffmpeg))"; \
+	else \
+		echo "NOT FOUND ($(FFMPEG_BINARY) or system)"; \
+	fi
 	@echo -n "FFprobe二进制: "
-	@test -f $(FFPROBE_BINARY) && echo "OK ($(FFPROBE_BINARY))" || echo "NOT FOUND ($(FFPROBE_BINARY))"
+	@if [ -f "$(FFPROBE_BINARY)" ]; then \
+		echo "OK ($(FFPROBE_BINARY))"; \
+	elif command -v ffprobe >/dev/null 2>&1; then \
+		echo "OK (system: $$(command -v ffprobe))"; \
+	else \
+		echo "NOT FOUND ($(FFPROBE_BINARY) or system)"; \
+	fi
 	@echo -n "libcurl: "
 	@$(PKG_CONFIG) --exists libcurl && echo "OK" || echo "NOT FOUND"
-	@echo -n "GStreamer: "
-	@$(PKG_CONFIG) --exists gstreamer-1.0 && echo "OK" || echo "NOT FOUND (optional)"
+
 
 # 安装
 install: release
 	@echo "Installing..."
 	@mkdir -p /usr/local/bin
 	@mkdir -p /etc/gateway
-	cp $(BIN_DIR)/* /usr/local/bin/
+	@mkdir -p /var/log/zlm-gateway
+	cp $(BIN_DIR)/gateway_manager /usr/local/bin/
 	cp configs/*.json /etc/gateway/ 2>/dev/null || true
 	cp configs/*.conf /etc/gateway/ 2>/dev/null || true
+	# 安装 systemd 服务
+	@if [ -f scripts/service/zlm-gateway.service ]; then \
+		echo "Installing systemd service..."; \
+		cp scripts/service/zlm-gateway.service /etc/systemd/system/; \
+		systemctl daemon-reload || true; \
+		echo "Service installed. Enable with: systemctl enable zlm-gateway"; \
+	fi
 
 # 帮助信息
 help:
