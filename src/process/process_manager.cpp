@@ -275,7 +275,11 @@ bool ProcessManager::StartFFmpegProcess(ProcessInfo& info) {
         }
         
         // 执行命令
-        execl("/bin/sh", "sh", "-c", info.command.c_str(), nullptr);
+        // Critical Fix: Use 'exec' to replace the shell process with the command process.
+        // This ensures that the PID we track is the actual FFmpeg process, not the shell wrapper.
+        // When we send SIGTERM/SIGKILL, it goes directly to FFmpeg, preventing zombie processes.
+        std::string exec_command = "exec " + info.command;
+        execl("/bin/sh", "sh", "-c", exec_command.c_str(), nullptr);
         exit(1);  // 如果 exec 失败
     } else {
         // 父进程：保存 PID

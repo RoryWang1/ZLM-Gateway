@@ -148,12 +148,9 @@ Result<void> RTSPGateway::Start(const std::string& source_url,
             // RTSP Direct Proxy Logic
             // If output is WebRTC, we force FFmpeg to ensure strict H.264+AAC/Opus transcoding and resolution control.
             // For other outputs (FLV, HLS, RTSP), if SmartStreamProcessor detected compatibility, we use Direct Proxy (AddStreamProxy).
-            if (output_protocol == "webrtc") {
-                LOG_INFO("[RTSP Gateway] WebRTC output requested, forcing FFmpeg for strict transcoding");
-                return false;
-            }
-            
-            // For non-WebRTC, try Direct Proxy via ZLM
+            // 尝试直接代理 (Direct Proxy)
+            // ZLMediaKit 支持将 RTSP 直接代理并转协议为 WebRTC/HLS/FLV
+            // 只有当直连失败（如编码不支持）时，SmartStreamProcessor 才会回退到 FFmpeg 转码
             return zlm_client_ && zlm_client_->AddStreamProxy(app, stream, url);
         },
         // 获取流信息回调

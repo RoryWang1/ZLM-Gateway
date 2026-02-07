@@ -68,6 +68,14 @@ std::shared_ptr<gateway::GatewayBase> StreamHandler::SelectGateway(const std::st
         return it->second;
     }
     
+    // Alias fix for local-camera / local_camera mismatch configuration
+    if (protocol == "local-camera") {
+        auto it2 = gateways_.find("local_camera");
+        if (it2 != gateways_.end()) {
+            return it2->second;
+        }
+    }
+    
     LOG_ERROR("SelectGateway: Unsupported protocol or Gateway not enabled: {}", protocol);
     return nullptr;
 }
@@ -1097,6 +1105,7 @@ nlohmann::json StreamHandler::BuildStreamJson(
     
     stream_json["error_code"] = metadata.error_code.empty() ? "" : metadata.error_code;
     stream_json["error_message"] = metadata.error_message.empty() ? "" : metadata.error_message;
+    stream_json["transcoding_reason"] = metadata.transcoding_reason.empty() ? "" : metadata.transcoding_reason;
     
     return stream_json;
 }

@@ -58,7 +58,10 @@ void FFmpegCommandBuilder::BuildDeviceInput(std::ostringstream& oss, const FFmpe
     if (options.input_width > 0 && options.input_height > 0) {
         oss << " -video_size " << options.input_width << "x" << options.input_height;
     }
-    oss << " -framerate " << input_fps;
+    oss << " -framerate " << input_fps
+        << " -fflags nobuffer -flags low_delay"  // 关键：禁用输入缓冲
+        << " -probesize 32"  // 极小探测包大小
+        << " -analyzeduration 0";  // 禁用探测时长
     
     // 音频输入处理
     std::string audio_input = ":default";
@@ -115,52 +118,68 @@ void FFmpegCommandBuilder::BuildEncoding(std::ostringstream& oss, const FFmpegCo
 }
 
 void FFmpegCommandBuilder::BuildWebRTCEncoding(std::ostringstream& oss, const FFmpegCommandOptions& options) const {
-    // WebRTC 模式：必须转码为 H.264 (High profile, zero latency) + AAC (最终转Opus)
-    // 且必须确保分辨率和像素格式正确
+    // WebRTC 模式：
+    // 1. 视频策略：
+    //    - 如果源视频是 H.264，则尝试 Copy (Video Pass-through)，实现 0 毫秒延迟。
+    //    - 否则，转码为 H.264 (使用 zerolatency 参数).
+    // 2. 音频策略：
+    //    - 始终转码为 AAC (44.1k/48k)，以解决 "Audio Issue" (如 G.711/PCM 在 WebRTC 不兼容问题).
+    //    - ZLMediaKit 会负责将 AAC 重新封装/转码为 WebRTC 需要的 Opus。
     
-    // 码率选择
+    // 检查视频兼容性 (H.264 + Profile + PixelFormat)
+    std::string compatibility_reason;
+    bool video_compatible = ::gateway::utils::StreamInfoDetector::IsVideoWebRTCCompatible(
+        options.stream_info, 
+        config_->gateway.webrtc_compat, 
+        compatibility_reason
+    );
+    
+    // 码率选择 (如果是转码才需要)
     const auto& webrtc_cfg = config_->local_camera.webrtc;
     int bitrate = (options.target_bitrate_kbps > 0) ? options.target_bitrate_kbps : 
                  (webrtc_cfg.bitrate.empty() ? 2500 : std::stoi(webrtc_cfg.bitrate));
 
-    // 分辨率选择
-    int target_width, target_height;
-    bool use_native_resolution = false;
-    
     int src_width = options.stream_info.video_width > 0 ? options.stream_info.video_width : options.input_width;
     int src_height = options.stream_info.video_height > 0 ? options.stream_info.video_height : options.input_height;
+    
+    // Check if resolution scaling is required
+    bool resolution_matches = true;
+    if (!webrtc_cfg.resolution.empty()) {
+        auto [target_w, target_h] = SelectResolution(webrtc_cfg.resolution, src_width, src_height);
+        // If native resolution differs from target (and target is valid), we must transcode to scale
+        if (target_w > 0 && target_h > 0 && (std::abs(target_w - src_width) > 2 || std::abs(target_h - src_height) > 2)) {
+            resolution_matches = false;
+        }
+    }
 
-    if (src_width > 0 && src_height > 0 && options.use_native_resolution) {
-        target_width = src_width;
-        target_height = src_height;
-        use_native_resolution = true;
+    if (video_compatible && resolution_matches) {
+        LOG_INFO("[FFmpegCommandBuilder] WebRTC: Source is fully compatible ({}) and resolution matches, using Video Copy.", compatibility_reason);
+        // 视频 Copy
+        oss << " -c:v copy";
     } else {
+        LOG_INFO("[FFmpegCommandBuilder] WebRTC: Source is not compatible ({}), transcoding required.", compatibility_reason);
+        
+        // 分辨率选择
+        int src_width = options.stream_info.video_width > 0 ? options.stream_info.video_width : options.input_width;
+        int src_height = options.stream_info.video_height > 0 ? options.stream_info.video_height : options.input_height;
+        
+        int target_width, target_height;
         std::string config_res = webrtc_cfg.resolution.empty() ? "1920x1080" : webrtc_cfg.resolution;
         auto res = SelectResolution(config_res, src_width, src_height);
         target_width = res.first;
         target_height = res.second;
+
+
+
+        // 使用公共辅助类生成核心编码参数 (Force zerolatency inside)
+        ::utils::FFmpegParams::AddWebRTCEncodingParams(oss, bitrate, true, src_width, src_height);
+
+        // 显式指定输出分辨率
+        oss << " -s " << target_width << "x" << target_height;
     }
 
-    // 像素格式 (设备输入通常需要 nv12，网络流通常已经是 yuv420p 但统一 nv12 更安全)
-    if (options.input_format == "avfoundation") {
-        oss << " -pix_fmt nv12";
-    }
-
-    // 使用公共辅助类生成核心编码参数
-    // 传递source的宽高，让AddWebRTCEncodingParams决定是否添加scale
-    ::utils::FFmpegParams::AddWebRTCEncodingParams(oss, bitrate, true, src_width, src_height);
-
-    // 显式指定输出分辨率（使用-s参数，不使用-vf避免冲突）
-    oss << " -s " << target_width << "x" << target_height;
-
-    // 音频处理：如果是 AAC 且为网络流，尝试 Copy？
-    // WebRTC 比较特殊，建议统一转码以保证兼容性，除非非常确定源完全兼容
-    // 目前策略：简单点，如果是网络流且是 AAC，尝试 Copy；否则转码
-    if (options.input_format != "avfoundation" && options.input_format != "v4l2" && options.stream_info.audio_codec == "aac") {
-         LOG_DEBUG("[FFmpegCommandBuilder] WebRTC: Source is AAC, logic suggests copy but params enforced transcoding. Keeping transcoding for stability.");
-         // 注意：AddWebRTCEncodingParams 已经加了 -c:a aac。如果想 Copy 需要覆盖。
-         // 鉴于 WebRTC 对音频参数敏感，这里维持转码
-    }
+    // 音频处理：始终转码以保证兼容性
+    oss << " -c:a aac -b:a 128k -ar 48000 -ac 2";
 }
 
 void FFmpegCommandBuilder::BuildStreamingEncoding(std::ostringstream& oss, const FFmpegCommandOptions& options) const {
@@ -189,31 +208,39 @@ void FFmpegCommandBuilder::BuildStreamingEncoding(std::ostringstream& oss, const
 
     if (!is_device && !is_hls) {
         // ... (existing copy logic) ...
-        bool video_compatible = ::gateway::utils::StreamInfoDetector::IsVideoCodecCompatible(options.stream_info.video_codec);
+        std::string video_reason;
+        // Logic Fix: Use IsVideoWebSafe to check for Pixel Format (yuv420p) compatibility
+        bool video_compatible = ::gateway::utils::StreamInfoDetector::IsVideoWebSafe(options.stream_info, video_reason);
         bool audio_compatible = ::gateway::utils::StreamInfoDetector::IsAudioCodecCompatible(options.stream_info.audio_codec);
         
-        if (video_compatible && audio_compatible) {
-             // 调试日志：检查为何滤镜未添加
-             // std::cout << "[DEBUG] BuildStreamingEncoding: protocol=" << options.output_protocol 
-             //           << ", codec=" << options.stream_info.audio_codec << std::endl;
+        // Also check resolution for Streaming mode
+        bool resolution_matches = true;
+        if (!flv_hls_cfg.resolution.empty()) {
+             auto [target_w, target_h] = SelectResolution(flv_hls_cfg.resolution, src_width, src_height);
+             if (target_w > 0 && target_h > 0 && (std::abs(target_w - src_width) > 2 || std::abs(target_h - src_height) > 2)) {
+                 resolution_matches = false;
+             }
+        }
 
-             // 策略调整：对于网络流（RTSP/RTMP），为了解决 ADTS/ASC 封装兼容性问题（导致VLC无声/浏览器卡顿）
-             // 我们强制进行音频转码，保留视频 Copy。音频转码开销极低，但能保证兼容性。
-             // 视频兼容 -> Copy Video
-             oss << " -c:v copy";
-             if (bitrate > 0) ::utils::FFmpegParams::AddRateLimitParams(oss, bitrate);
-             
-             // 强制转码音频 (修复 ADTS -> FLV/RTMP 问题)
-             oss << " -c:a aac -b:a 128k -ar 44100 -ac 2";
-             return;
-        } else if (video_compatible) {
-            // 视频兼容 -> Copy Video
-            oss << " -c:v copy";
+        if (video_compatible && resolution_matches) {
+             if (audio_compatible) {
+                 // 策略调整：对于网络流（RTSP/RTMP），为了解决 ADTS/ASC 封装兼容性问题
+                 // 我们强制进行音频转码，保留视频 Copy (如果兼容且分辨率匹配)。
+                 oss << " -c:v copy";
+                 if (bitrate > 0) ::utils::FFmpegParams::AddRateLimitParams(oss, bitrate);
+                 
+                 // 强制转码音频
+                 oss << " -c:a aac -b:a 128k -ar 44100 -ac 2";
+                 return;
+             } else {
+                 // 视频兼容且分辨率匹配 -> Copy Video
+                 oss << " -c:v copy";
             if (bitrate > 0) ::utils::FFmpegParams::AddRateLimitParams(oss, bitrate);
             
             // 转码音频
             oss << " -c:a aac -b:a 128k -ar 44100 -ac 2";
             return;
+             }
         }
     }
 

@@ -34,6 +34,9 @@ struct StreamProcessResult {
     std::string source_video_codec;
     int source_width = 0;
     int source_height = 0;
+    
+    // 转码原因（用于前端展示）
+    std::string transcoding_reason;
 };
 
 /**
@@ -149,7 +152,8 @@ public:
                       const std::string& gateway_type,
                       GatewayStatus status,
                       int pid,
-                      const std::string& processing_type = "0");
+                      const std::string& processing_type = "0",
+                      const std::string& transcoding_reason = "");
 
     /**
      * @brief 报告流创建结果到 StreamManager
@@ -181,7 +185,8 @@ private:
                                 const std::string& protocol,
                                 const std::string& output_protocol,
                                 bool& use_ffmpeg,
-                                bool& video_only_transcode);
+                                bool& video_only_transcode,
+                                std::string& transcoding_reason);
 
     /**
      * @brief 直接代理结果
